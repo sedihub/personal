@@ -56,7 +56,7 @@ class TextProp:
     def UpdateTextProp(self,msg,render=False):
         self.sliceTextMapper.SetInput(msg)
         if(render):
-            self.imageViewer.Render()
+            self.imageViewer.render()
 
 
 class Cursor3D():
@@ -194,8 +194,8 @@ class CustomInteractorManager:
         elif key == "s" or key == "S":
             self.threePlaneView.take_screenshots()
         elif key == "q" or key == "Q":
-            self.threePlaneView.Finalize()
-            self.threePlaneView.TerminateApp()
+            self.threePlaneView.finalize()
+            self.threePlaneView.terminate_app()
         elif key == "c" or key == "C":
             self.threePlaneView.change_curser_visibility()
         elif key == "f" or key == "F":  # Move cursor 10 steps!
@@ -463,7 +463,7 @@ class ThreePlaneView():
         self._view_y.GetRenderer().AddActor(self.maskActorY)
         self._view_z.GetRenderer().AddActor(self.maskActorZ)
         #
-        self.Render()
+        self.render()
 
     def update_masks(self,currentImageViewer=None):
         if self.maskActorX is not None and \
@@ -554,7 +554,7 @@ class ThreePlaneView():
             self._text_prop_z.UpdateTextProp("--")
         #
         self.update_masks(imViewer)
-        self.Render()
+        self.render()
 
     def dispatch_arrow_key_update(self, imViewer, move=(0, 0)):
         if imViewer == self._view_x:
@@ -604,7 +604,7 @@ class ThreePlaneView():
             self._cursor_z.update_cursor_position(self.position)
         #
         self.update_masks(imViewer)
-        self.Render()    
+        self.render()    
 
     def dispatch_slice_update(self, imViewer, slice):
         if imViewer == self._view_x:
@@ -644,7 +644,7 @@ class ThreePlaneView():
             self._cursor_z.update_cursor_position(self.position)
         #
         self.update_masks(imViewer)
-        self.Render()
+        self.render()
 
     def refresh_current_window_level(self):
         self.current_window_level = self._view_x.GetColorLevel()
@@ -666,7 +666,7 @@ class ThreePlaneView():
         self._view_y.SetColorWindow(width)
         self._view_z.SetColorWindow(width)
         #
-        self.Render()
+        self.render()
 
     def dispatch_window_level_reset(self,reset_window,reset_level):
         if reset_window:
@@ -680,7 +680,7 @@ class ThreePlaneView():
             self._view_z.SetColorLevel(self.initial_window_level)
         #
         self.refresh_current_window_level()
-        self.Render()
+        self.render()
 
     def take_screenshots(self,):
         ## Screenshot PNGImageWriter and WindowToImageFilter:
@@ -739,7 +739,7 @@ class ThreePlaneView():
             self._cursor_x.cursor_visibility()
             self._cursor_y.cursor_visibility()
             self._cursor_z.cursor_visibility()
-        self.Render()
+        self.render()
 
 
     def initialize(self):
@@ -747,22 +747,22 @@ class ThreePlaneView():
         self._render_window_interactor_y.Initialize()
         self._render_window_interactor_z.Initialize()
 
-    def Render(self):
+    def render(self):
         self._view_x.Render()
         self._view_y.Render()
         self._view_z.Render()
 
-    def Start(self):
+    def start(self):
         self._render_window_interactor_x.Start()
         self._render_window_interactor_y.Start()
         self._render_window_interactor_z.Start()
         
-    def Finalize(self):
+    def finalize(self):
         self._render_window_interactor_x.GetRenderWindow().Finalize()
         self._render_window_interactor_y.GetRenderWindow().Finalize()
         self._render_window_interactor_z.GetRenderWindow().Finalize()
 
-    def TerminateApp(self):
+    def terminate_app(self):
         self._render_window_interactor_x.TerminateApp()
         self._render_window_interactor_y.TerminateApp()
         self._render_window_interactor_z.TerminateApp()
@@ -998,12 +998,12 @@ def main():
     mpr.set_viewers_window_level(args.window_level, args.window_width) 
     mpr.set_viewers_window_name(args.window_title)
     mpr.initialize()
-    mpr.Render()
-    mpr.Start()
+    mpr.render()
+    mpr.start()
 
     # Close window:
-    mpr.Finalize()
-    mpr.TerminateApp()
+    mpr.finalize()
+    mpr.terminate_app()
 
 
 if __name__ == "__main__":
