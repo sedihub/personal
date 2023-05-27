@@ -11,11 +11,6 @@ import vtk.util.numpy_support as vtk_numpy_support
 import argparse
 
 
-
-
-cursorOff     = False #True
-
-
 class bashColours:
     RESET       = "\033[0m"              # Reset
     BLACK       = "\033[30m"             # Black 
@@ -100,19 +95,19 @@ class Cursor3D():
         #
         self.state = True
 
-    def UpdateCursorPosition(self, centre=(0.0, 0.0, 0.0)):
+    def update_cursor_position(self, centre=(0.0, 0.0, 0.0)):
         tolerance = 0.05
-        if(  self.imageViewer.GetSliceOrientation() == self.imageViewer.SLICE_ORIENTATION_YZ):
-            self.cursor.SetFocalPoint(centre[0]+tolerance,centre[1],centre[2])
-        elif(self.imageViewer.GetSliceOrientation() == self.imageViewer.SLICE_ORIENTATION_XZ):
-            self.cursor.SetFocalPoint(centre[0],centre[1]+tolerance,centre[2])
-        elif(self.imageViewer.GetSliceOrientation() == self.imageViewer.SLICE_ORIENTATION_XY):
-            self.cursor.SetFocalPoint(centre[0],centre[1],centre[2]+tolerance)
+        if self.imageViewer.GetSliceOrientation() == self.imageViewer.SLICE_ORIENTATION_YZ:
+           self.cursor.SetFocalPoint(centre[0]+tolerance,centre[1],centre[2])
+        elif self.imageViewer.GetSliceOrientation() == self.imageViewer.SLICE_ORIENTATION_XZ:
+             self.cursor.SetFocalPoint(centre[0],centre[1]+tolerance,centre[2])
+        elif self.imageViewer.GetSliceOrientation() == self.imageViewer.SLICE_ORIENTATION_XY:
+             self.cursor.SetFocalPoint(centre[0],centre[1],centre[2]+tolerance)
         else:
             print("ERROR!")    
         self.cursor.Update()
 
-    def UpdateCursorSize(self, size=(1.0, 1.0, 1.0)):
+    def update_cursor_size(self, size=(1.0, 1.0, 1.0)):
         _bounds = self.cursor.GetModelBounds()
         _centre = (.5*(_bounds[1]+_bounds[0]) ,  .5*(_bounds[3]+_bounds[2]) ,  .5*(_bounds[5]+_bounds[4]))
         self.cursor.SetModelBounds(_centre[0]-_size[0] , centre[0]+_size[0],
@@ -120,7 +115,7 @@ class Cursor3D():
                                     _centre[2]-_size[2] , centre[2]+_size[2])
         self.cursor.Update()
 
-    def CursorVisibility(self):
+    def cursor_visibility(self):
         if(not self.state):        
             self.cursor.OutlineOff()
             self.cursor.AxesOn()
@@ -161,29 +156,29 @@ class CustomInteractorManager:
         self.initial_event_position = None
         self._cursor_move_step = 1
 
-    def SetImageViewer(self, mpr, imViewer):
+    def set_image_viewer(self, mpr, imViewer):
         self.threePlaneView = mpr
         self.imageViewer = imViewer
         #
         self.imageViewer.GetInteractorStyle().RemoveAllObservers()
 
-    def Initialize(self):
+    def initialize(self):
         self.minSlice = self.imageViewer.GetSliceMin()
         self.maxSlice = self.imageViewer.GetSliceMax()
 
     def KeyPress(self, obj, event):
         key = obj.GetKeySym()
         if key == "Up":
-            self.threePlaneView.DispatchArrowKeyUpdate(
+            self.threePlaneView.dispatch_arrow_key_update(
                 self.imageViewer, (0, self._cursor_move_step))
         elif key == "Down":
-            self.threePlaneView.DispatchArrowKeyUpdate(
+            self.threePlaneView.dispatch_arrow_key_update(
                 self.imageViewer, (0, -self._cursor_move_step))
         elif key == "Left":
-            self.threePlaneView.DispatchArrowKeyUpdate(
+            self.threePlaneView.dispatch_arrow_key_update(
                 self.imageViewer, (-self._cursor_move_step, 0))
         elif key == "Right":
-            self.threePlaneView.DispatchArrowKeyUpdate(
+            self.threePlaneView.dispatch_arrow_key_update(
                 self.imageViewer, (self._cursor_move_step, 0))
         elif key == "f" or key == "F":  # Move cursor 10 steps!
             self._cursor_move_step = 10
@@ -191,28 +186,30 @@ class CustomInteractorManager:
     def KeyRelease(self, obj, event):
         key = obj.GetKeySym()
         if key == "r" or key == "R":
-            self.threePlaneView.DispatchWindowLevelReset(True, True)
+            self.threePlaneView.dispatch_window_level_reset(True, True)
         elif key == "w" or key == "W":
-            self.threePlaneView.DispatchWindowLevelReset(True, False)
+            self.threePlaneView.dispatch_window_level_reset(True, False)
         elif key == "l" or key == "L":
-            self.threePlaneView.DispatchWindowLevelReset(False, True)
+            self.threePlaneView.dispatch_window_level_reset(False, True)
         elif key == "s" or key == "S":
-            self.threePlaneView.TakeScreenshot()
+            self.threePlaneView.take_screenshots()
         elif key == "q" or key == "Q":
             self.threePlaneView.Finalize()
             self.threePlaneView.TerminateApp()
         elif key == "c" or key == "C":
-            self.threePlaneView.ChangeCurserVisibility()
+            self.threePlaneView.change_curser_visibility()
         elif key == "f" or key == "F":  # Move cursor 10 steps!
             self._cursor_move_step = 1
         elif key == "period":  
             slice = self.imageViewer.GetSlice() + 1
             if slice >= self.minSlice and slice <= self.maxSlice:
-                self.threePlaneView.DispatchSliceUpdate(self.imageViewer, slice)
+                self.threePlaneView.dispatch_slice_update(self.imageViewer, slice)
         elif key == "comma":  
             slice = self.imageViewer.GetSlice() - 1
             if slice >= self.minSlice and slice <= self.maxSlice:
-                self.threePlaneView.DispatchSliceUpdate(self.imageViewer, slice)
+                self.threePlaneView.dispatch_slice_update(self.imageViewer, slice)
+        elif key == "h" or key == "H":
+            print("Camera: ", self.imageViewer.GetRenderer().GetActiveCamera()) 
 
     def LeftButtonPress(self, obj, event):
         if self.initial_event_position is None:
@@ -221,177 +218,198 @@ class CustomInteractorManager:
     def LeftButtonRelease(self, obj, event):
         clickPos = obj.GetEventPosition()
         self.initial_event_position = None
-        self.threePlaneView.RefreshCurrentWindowLevel()
+        self.threePlaneView.refresh_current_window_level()
 
     def MouseMove(self, obj, event):
         current_event_position = obj.GetEventPosition()
         # print(f" -> {current_event_position}")
         if(self.initial_event_position is not None):
-            self.threePlaneView.DispatchWindowLevelEvent(
+            self.threePlaneView.dispatch_window_level_event(
                 current_event_position,
                 self.initial_event_position)
         else:
-            self.threePlaneView.DispatchMouseMove(
+            self.threePlaneView.dispatch_mouse_move(
                 self.imageViewer,
                 current_event_position)
 
     def MouseWheelForward(self, obj, event):
         slice = self.imageViewer.GetSlice() + 1
         if slice >= self.minSlice and slice <= self.maxSlice:
-            self.threePlaneView.DispatchSliceUpdate(self.imageViewer, slice)
+            self.threePlaneView.dispatch_slice_update(self.imageViewer, slice)
 
     def MouseWheelBackward(self, obj, event):
         slice = self.imageViewer.GetSlice() - 1
         if slice >= self.minSlice and slice <= self.maxSlice:
-            self.threePlaneView.DispatchSliceUpdate(self.imageViewer, slice) 
+            self.threePlaneView.dispatch_slice_update(self.imageViewer, slice) 
 
 
 class ThreePlaneView():
-    def __init__(self,parent=None):
-        ## Create the three views: Axial Sagittal and Coronal
-        self.viewX = vtk.vtkImageViewer2()
-        self.viewY = vtk.vtkImageViewer2()
-        self.viewZ = vtk.vtkImageViewer2()  
-        #
-        ## Set their corresponding orientations
-        self.viewX.SetSliceOrientationToYZ()
-        self.viewY.SetSliceOrientationToXZ()
-        self.viewZ.SetSliceOrientationToXY()
-        #
-        ## Adjust Camera for each viewer:
-        self.cameraX = self.viewX.GetRenderer().GetActiveCamera()
-        self.cameraX.SetFocalPoint(0, 0, 0)
-        self.cameraX.SetPosition(1, 0, 0)
-        self.cameraX.SetViewUp(0, 0, -1)
-        # self.cameraX.Zoom(1.0)
-        #
-        self.cameraY = self.viewY.GetRenderer().GetActiveCamera()
-        self.cameraY.SetFocalPoint(0, 0, 0)
-        self.cameraY.SetPosition(0, 1, 0)
-        self.cameraY.SetViewUp(0, 0, -1)
-        # self.cameraY.Zoom(1.0)
-        #
-        self.cameraZ = self.viewZ.GetRenderer().GetActiveCamera()
-        self.cameraZ.SetFocalPoint(0, 0, 0)
-        self.cameraZ.SetPosition(0, 0, 1)
-        self.cameraZ.SetViewUp(0, 1, 0)
-        # self.cameraZ.Zoom(1.0)
-        ##
-        self.renderWindowInteractorX = vtk.vtkRenderWindowInteractor()
-        self.renderWindowInteractorY = vtk.vtkRenderWindowInteractor()
-        self.renderWindowInteractorZ = vtk.vtkRenderWindowInteractor()
-        #
-        self.renderWindowInteractorX.SetRenderWindow(self.viewX.GetRenderWindow())
-        self.renderWindowInteractorY.SetRenderWindow(self.viewY.GetRenderWindow())
-        self.renderWindowInteractorZ.SetRenderWindow(self.viewZ.GetRenderWindow())
-        #
-        self.viewX.SetupInteractor(self.renderWindowInteractorX)
-        self.viewY.SetupInteractor(self.renderWindowInteractorY)
-        self.viewZ.SetupInteractor(self.renderWindowInteractorZ)
-        ##
-        self.interactorMgrX = CustomInteractorManager(self.renderWindowInteractorX)
-        self.interactorMgrY = CustomInteractorManager(self.renderWindowInteractorY)
-        self.interactorMgrZ = CustomInteractorManager(self.renderWindowInteractorZ)
-        #
-        self.interactorMgrX.SetImageViewer(self, self.viewX)
-        self.interactorMgrY.SetImageViewer(self, self.viewY)
-        self.interactorMgrZ.SetImageViewer(self, self.viewZ)
-        ##
-        self.textPropX = TextProp(self.viewX)
-        self.textPropY = TextProp(self.viewY)
-        self.textPropZ = TextProp(self.viewZ)
-        ##
-        if cursorOff:
-            self.cursorX = None
-            self.cursorY = None
-            self.cursorZ = None
-        else:
-            self.cursorX = Cursor3D(self.viewX)
-            self.cursorY = Cursor3D(self.viewY)
-            self.cursorZ = Cursor3D(self.viewZ)
-        ##
-        self.maskActorX = None
-        self.maskActorY = None
-        self.maskActorZ = None
-        #
-        self.pickerX = vtk.vtkPropPicker()
-        self.pickerY = vtk.vtkPropPicker()
-        self.pickerZ = vtk.vtkPropPicker()
-        #
-        self.imageDataSpacing = None
-        self.imageDataDimensions = None
-        #
+    def __init__(self, image_data, cursor_off=False):
+        self._cursor_off = cursor_off
+        self._image_spacing = None
+        self._image_dimensions = None
         self.lastImageCoordinates = [0, 0, 0]
-        #
         self.position = [0.0, 0.0, 0.0]
-        #
         self.initial_window_width = None
         self.initial_window_level = None
-        #
         self.current_window_width = None
         self.current_window_level = None
 
-    def SetImageDate(self,image_data):
-        self.viewX.SetInputData(image_data)
-        self.viewY.SetInputData(image_data)
-        self.viewZ.SetInputData(image_data)
+        ## Create the three views: Axial Sagittal and Coronal
+        self._view_x = vtk.vtkImageViewer2()
+        self._view_y = vtk.vtkImageViewer2()
+        self._view_z = vtk.vtkImageViewer2()  
+        
+        self._image_data = image_data
+        self._set_slice_orientations()
+        self._set_render_window_interactors()
+        self._set_custom_interactor_managers()
+        self._set_text_props()
+        self._set_cursors()
+        self._set_image_date()
+        self._update_cameras()
+        
+        ## Mask Actors:
+        self.maskActorX = None
+        self.maskActorY = None
+        self.maskActorZ = None
+        
+        ## Pickers:
+        self.pickerX = vtk.vtkPropPicker()
+        self.pickerY = vtk.vtkPropPicker()
+        self.pickerZ = vtk.vtkPropPicker()
+
+    def _set_slice_orientations(self,):
+        ## Set their corresponding orientations
+        self._view_x.SetSliceOrientationToYZ()
+        self._view_y.SetSliceOrientationToXZ()
+        self._view_z.SetSliceOrientationToXY()
+
+    def _set_image_date(self,):
+        self._view_x.SetInputData(self._image_data)
+        self._view_y.SetInputData(self._image_data)
+        self._view_z.SetInputData(self._image_data)
         #
-        self.interactorMgrX.Initialize()
-        self.interactorMgrY.Initialize()
-        self.interactorMgrZ.Initialize()
+        self._interactor_mgr_x.initialize()
+        self._interactor_mgr_y.initialize()
+        self._interactor_mgr_z.initialize()
         #
-        self.imageDataSpacing    = image_data.GetSpacing()
-        self.imageDataDimensions = image_data.GetDimensions()
+        self._image_spacing    = self._image_data.GetSpacing()
+        self._image_dimensions = self._image_data.GetDimensions()
 
-    def SetViewersWindowName(self,window_title=" ¯\\_(ツ)_/¯"):
-        self.viewX.GetRenderWindow().SetWindowName(" ".join([window_title,"(X)"]))
-        self.viewY.GetRenderWindow().SetWindowName(" ".join([window_title,"(Y)"]))
-        self.viewZ.GetRenderWindow().SetWindowName(" ".join([window_title,"(Z)"]))
+    def _set_render_window_interactors(self,):
+        ## Set Render Window Interactor
+        self._render_window_interactor_x = vtk.vtkRenderWindowInteractor()
+        self._render_window_interactor_y = vtk.vtkRenderWindowInteractor()
+        self._render_window_interactor_z = vtk.vtkRenderWindowInteractor()
+        #
+        self._render_window_interactor_x.SetRenderWindow(self._view_x.GetRenderWindow())
+        self._render_window_interactor_y.SetRenderWindow(self._view_y.GetRenderWindow())
+        self._render_window_interactor_z.SetRenderWindow(self._view_z.GetRenderWindow())
+        #
+        self._view_x.SetupInteractor(self._render_window_interactor_x)
+        self._view_y.SetupInteractor(self._render_window_interactor_y)
+        self._view_z.SetupInteractor(self._render_window_interactor_z)
 
-    def SetViewersWindowSize(self, x_pixels=1024, y_pixels=1024):
-        self.renderWindowInteractorX.GetRenderWindow().SetSize(x_pixels, y_pixels)
-        self.renderWindowInteractorY.GetRenderWindow().SetSize(x_pixels, y_pixels)
-        self.renderWindowInteractorZ.GetRenderWindow().SetSize(x_pixels, y_pixels)
+    def _set_custom_interactor_managers(self,):
+        ## Set Custom Interactors: 
+        self._interactor_mgr_x = CustomInteractorManager(self._render_window_interactor_x)
+        self._interactor_mgr_y = CustomInteractorManager(self._render_window_interactor_y)
+        self._interactor_mgr_z = CustomInteractorManager(self._render_window_interactor_z)
+        #
+        self._interactor_mgr_x.set_image_viewer(self, self._view_x)
+        self._interactor_mgr_y.set_image_viewer(self, self._view_y)
+        self._interactor_mgr_z.set_image_viewer(self, self._view_z)
 
-    def SetViewersBackgroundColour(self, r=0.125, g=0.0, b=0.125):
-        self.viewX.GetRenderer().SetBackground(r, g, b)
-        self.viewY.GetRenderer().SetBackground(r, g, b)
-        self.viewZ.GetRenderer().SetBackground(r, g, b)
+    def _update_cameras(self,):
+        ## Adjust Camera for each viewer:
+        self.cameraX = self._view_x.GetRenderer().GetActiveCamera()
+        self.cameraX.SetFocalPoint(0, 0, 0)
+        self.cameraX.SetPosition(1, 0, 0)
+        self.cameraX.SetViewUp(0, 0, -1)
+        self.cameraX.SetParallelScale(128.0)
+        # self.cameraX.Zoom(1.0)
+        #
+        self.cameraY = self._view_y.GetRenderer().GetActiveCamera()
+        self.cameraY.SetFocalPoint(0, 0, 0)
+        self.cameraY.SetPosition(0, 1, 0)
+        self.cameraY.SetViewUp(0, 0, -1)
+        self.cameraY.SetParallelScale(128.0)
+        # self.cameraY.Zoom(1.0)
+        #
+        self.cameraZ = self._view_z.GetRenderer().GetActiveCamera()
+        self.cameraZ.SetFocalPoint(0, 0, 0)
+        self.cameraZ.SetPosition(0, 0, 1)
+        self.cameraZ.SetViewUp(0, 1, 0)
+        self.cameraZ.SetParallelScale(128.0)
+        # self.cameraZ.Zoom(1.0)
 
-    def SetViewersWindowLevel(self, level, width):
+    def _set_text_props(self,):
+        ## Text Props
+        self._text_prop_x = TextProp(self._view_x)
+        self._text_prop_y = TextProp(self._view_y)
+        self._text_prop_z = TextProp(self._view_z)
+
+    def _set_cursors(self,):
+        ## Set Cursor:
+        if self._cursor_off:
+            self._cursor_x = None
+            self._cursor_y = None
+            self._cursor_z = None
+        else:
+            self._cursor_x = Cursor3D(self._view_x)
+            self._cursor_y = Cursor3D(self._view_y)
+            self._cursor_z = Cursor3D(self._view_z)
+
+    def set_viewers_window_name(self,window_title=" ¯\\_(ツ)_/¯"):
+        self._view_x.GetRenderWindow().SetWindowName(" ".join([window_title,"(X)"]))
+        self._view_y.GetRenderWindow().SetWindowName(" ".join([window_title,"(Y)"]))
+        self._view_z.GetRenderWindow().SetWindowName(" ".join([window_title,"(Z)"]))
+
+    def set_viewers_window_size(self, x_pixels=1024, y_pixels=1024):
+        self._render_window_interactor_x.GetRenderWindow().SetSize(x_pixels, y_pixels)
+        self._render_window_interactor_y.GetRenderWindow().SetSize(x_pixels, y_pixels)
+        self._render_window_interactor_z.GetRenderWindow().SetSize(x_pixels, y_pixels)
+
+    def set_viewers_background_color(self, r=0.125, g=0.0, b=0.125):
+        self._view_x.GetRenderer().SetBackground(r, g, b)
+        self._view_y.GetRenderer().SetBackground(r, g, b)
+        self._view_z.GetRenderer().SetBackground(r, g, b)
+
+    def set_viewers_window_level(self, level, width):
         if (width is not None) and (level is not None):
             self.initial_window_width = width
             self.initial_window_level = level
             #
-            self.viewX.SetColorLevel(level)
-            self.viewY.SetColorLevel(level)
-            self.viewZ.SetColorLevel(level)
+            self._view_x.SetColorLevel(level)
+            self._view_y.SetColorLevel(level)
+            self._view_z.SetColorLevel(level)
             #
-            self.viewX.SetColorWindow(width)
-            self.viewY.SetColorWindow(width)
-            self.viewZ.SetColorWindow(width)
+            self._view_x.SetColorWindow(width)
+            self._view_y.SetColorWindow(width)
+            self._view_z.SetColorWindow(width)
         else:
-            self.initial_window_width = self.viewX.GetColorWindow()
-            self.initial_window_level = self.viewX.GetColorLevel()
+            self.initial_window_width = self._view_x.GetColorWindow()
+            self.initial_window_level = self._view_x.GetColorLevel()
         #
         self.current_window_width = self.initial_window_width
         self.current_window_level = self.initial_window_level
 
-    def SetInterpolation(self,interpolationType="Nearest"):
+    def set_interpolation(self,interpolationType="Nearest"):
         if interpolationType == "Cubic":
-            self.viewX.GetImageActor().GetProperty().SetInterpolationTypeToCubic()
-            self.viewY.GetImageActor().GetProperty().SetInterpolationTypeToCubic()
-            self.viewZ.GetImageActor().GetProperty().SetInterpolationTypeToCubic()
+            self._view_x.GetImageActor().GetProperty().SetInterpolationTypeToCubic()
+            self._view_y.GetImageActor().GetProperty().SetInterpolationTypeToCubic()
+            self._view_z.GetImageActor().GetProperty().SetInterpolationTypeToCubic()
         elif interpolationType == "Linear":
-            self.viewX.GetImageActor().GetProperty().SetInterpolationTypeToLinear()
-            self.viewY.GetImageActor().GetProperty().SetInterpolationTypeToLinear()
-            self.viewZ.GetImageActor().GetProperty().SetInterpolationTypeToLinear()
+            self._view_x.GetImageActor().GetProperty().SetInterpolationTypeToLinear()
+            self._view_y.GetImageActor().GetProperty().SetInterpolationTypeToLinear()
+            self._view_z.GetImageActor().GetProperty().SetInterpolationTypeToLinear()
         else:
-            self.viewX.GetImageActor().GetProperty().SetInterpolationTypeToNearest()
-            self.viewY.GetImageActor().GetProperty().SetInterpolationTypeToNearest()
-            self.viewZ.GetImageActor().GetProperty().SetInterpolationTypeToNearest()
+            self._view_x.GetImageActor().GetProperty().SetInterpolationTypeToNearest()
+            self._view_y.GetImageActor().GetProperty().SetInterpolationTypeToNearest()
+            self._view_z.GetImageActor().GetProperty().SetInterpolationTypeToNearest()
 
-    def SetMaskData(self, mask_Data, colours_List):
+    def set_mask_data(self, mask_Data, colours_List):
         maskLookUpTable = vtk.vtkLookupTable()
         maskLookUpTable.SetNumberOfTableValues(len(colours_List) + 1)
         maskLookUpTable.SetRange(0.0, float(1 + len(colours_List)))
@@ -441,64 +459,64 @@ class ThreePlaneView():
         self.maskActorZ.InterpolateOff()
         self.maskActorZ.Update()
         ##
-        self.viewX.GetRenderer().AddActor(self.maskActorX)
-        self.viewY.GetRenderer().AddActor(self.maskActorY)
-        self.viewZ.GetRenderer().AddActor(self.maskActorZ)
+        self._view_x.GetRenderer().AddActor(self.maskActorX)
+        self._view_y.GetRenderer().AddActor(self.maskActorY)
+        self._view_z.GetRenderer().AddActor(self.maskActorZ)
         #
         self.Render()
 
-    def UpdateMasks(self,currentImageViewer=None):
+    def update_masks(self,currentImageViewer=None):
         if self.maskActorX is not None and \
            self.maskActorY is not None and \
            self.maskActorZ is not None :
             if currentImageViewer is not None:
-                self.maskActorX.SetDisplayExtent(self.viewX.GetImageActor().GetDisplayExtent())
-                self.maskActorY.SetDisplayExtent(self.viewY.GetImageActor().GetDisplayExtent())
-                self.maskActorZ.SetDisplayExtent(self.viewZ.GetImageActor().GetDisplayExtent())
+                self.maskActorX.SetDisplayExtent(self._view_x.GetImageActor().GetDisplayExtent())
+                self.maskActorY.SetDisplayExtent(self._view_y.GetImageActor().GetDisplayExtent())
+                self.maskActorZ.SetDisplayExtent(self._view_z.GetImageActor().GetDisplayExtent())
             self.maskActorX.Update()
             self.maskActorY.Update()
             self.maskActorZ.Update()
 
-    def DispatchMouseMove(self, imViewer, eventPos):
-        if imViewer == self.viewX:
-            self.pickerX.Pick(eventPos[0], eventPos[1], 0, self.viewX.GetRenderer())
+    def dispatch_mouse_move(self, imViewer, eventPos):
+        if imViewer == self._view_x:
+            self.pickerX.Pick(eventPos[0], eventPos[1], 0, self._view_x.GetRenderer())
             if self.pickerX.GetPath():
                 position = self.pickerX.GetPickPosition()
-                image_coordinate = (self.viewX.GetSlice() - self.viewX.GetSliceMin(),
-                                    round(position[1] / self.imageDataSpacing[1]),
-                                    round(position[2] / self.imageDataSpacing[2]))
+                image_coordinate = (self._view_x.GetSlice() - self._view_x.GetSliceMin(),
+                                    round(position[1] / self._image_spacing[1]),
+                                    round(position[2] / self._image_spacing[2]))
                 self.position = [
-                    self.viewX.GetSlice() * self.imageDataSpacing[0], position[1], position[2] ]
-                self.viewY.SetSlice(image_coordinate[1])
-                self.viewZ.SetSlice(image_coordinate[2])
+                    self._view_x.GetSlice() * self._image_spacing[0], position[1], position[2] ]
+                self._view_y.SetSlice(image_coordinate[1])
+                self._view_z.SetSlice(image_coordinate[2])
             else:
                 image_coordinate = (-1 , -1 , -1)
             # print(f"---> {image_coordinate}")
-        elif imViewer == self.viewY:
-            self.pickerY.Pick(eventPos[0], eventPos[1], 0, self.viewY.GetRenderer())
+        elif imViewer == self._view_y:
+            self.pickerY.Pick(eventPos[0], eventPos[1], 0, self._view_y.GetRenderer())
             if self.pickerY.GetPath():
                 position = self.pickerY.GetPickPosition()
-                image_coordinate = (round(position[0] / self.imageDataSpacing[0]),
-                                    self.viewY.GetSlice() - self.viewY.GetSliceMin(),
-                                    round(position[2] / self.imageDataSpacing[2]))
+                image_coordinate = (round(position[0] / self._image_spacing[0]),
+                                    self._view_y.GetSlice() - self._view_y.GetSliceMin(),
+                                    round(position[2] / self._image_spacing[2]))
                 self.position = [
-                    position[0] , self.viewY.GetSlice() * self.imageDataSpacing[1], position[2]]
-                self.viewX.SetSlice(image_coordinate[0])
-                self.viewZ.SetSlice(image_coordinate[2])
+                    position[0] , self._view_y.GetSlice() * self._image_spacing[1], position[2]]
+                self._view_x.SetSlice(image_coordinate[0])
+                self._view_z.SetSlice(image_coordinate[2])
             else:
                 image_coordinate = (-1 , -1 , -1)
             # print(f"---> {image_coordinate}")
-        elif imViewer == self.viewZ:
-            self.pickerZ.Pick(eventPos[0], eventPos[1], 0, self.viewZ.GetRenderer())
+        elif imViewer == self._view_z:
+            self.pickerZ.Pick(eventPos[0], eventPos[1], 0, self._view_z.GetRenderer())
             if self.pickerZ.GetPath():
                 position = self.pickerZ.GetPickPosition()
-                image_coordinate = (round(position[0] / self.imageDataSpacing[0]),
-                                    round(position[1] / self.imageDataSpacing[1]),
-                                    self.viewZ.GetSlice() - self.viewZ.GetSliceMin())
+                image_coordinate = (round(position[0] / self._image_spacing[0]),
+                                    round(position[1] / self._image_spacing[1]),
+                                    self._view_z.GetSlice() - self._view_z.GetSliceMin())
                 self.position = [
-                    position[0], position[1], self.viewZ.GetSlice() * self.imageDataSpacing[2]]
-                self.viewX.SetSlice(image_coordinate[0])
-                self.viewY.SetSlice(image_coordinate[1])
+                    position[0], position[1], self._view_z.GetSlice() * self._image_spacing[2]]
+                self._view_x.SetSlice(image_coordinate[0])
+                self._view_y.SetSlice(image_coordinate[1])
             else:
                 image_coordinate = (-1 , -1 , -1)
             # print(f"---> {image_coordinate}")
@@ -506,133 +524,133 @@ class ThreePlaneView():
             print("ERROR: Unspecified vtkImageViewer!")
             return
         # 
-        if image_coordinate[0] >= 0 and image_coordinate[0] < self.imageDataDimensions[0] and\
-           image_coordinate[1] >= 0 and image_coordinate[1] < self.imageDataDimensions[1] and\
-           image_coordinate[2] >= 0 and image_coordinate[2] < self.imageDataDimensions[2]:
-            voxVal = self.viewX.GetInput().GetScalarComponentAsDouble(
+        if image_coordinate[0] >= 0 and image_coordinate[0] < self._image_dimensions[0] and\
+           image_coordinate[1] >= 0 and image_coordinate[1] < self._image_dimensions[1] and\
+           image_coordinate[2] >= 0 and image_coordinate[2] < self._image_dimensions[2]:
+            voxVal = self._view_x.GetInput().GetScalarComponentAsDouble(
                 image_coordinate[0] , image_coordinate[1] , image_coordinate[2] , 0)
-            self.textPropX.UpdateTextProp("".join(
-                [ "(" , str(image_coordinate[0]+1) , "/" , str(self.imageDataDimensions[0]) , " , " ,\
-                        str(image_coordinate[1]+1) , "/" , str(self.imageDataDimensions[1]) , " , " ,\
-                        str(image_coordinate[2]+1) , "/" , str(self.imageDataDimensions[2]) , ")    " , str(voxVal) ]))
-            self.textPropY.UpdateTextProp("".join(
-                [ "(" , str(image_coordinate[0]+1) , "/" , str(self.imageDataDimensions[0]) , " , " ,\
-                        str(image_coordinate[1]+1) , "/" , str(self.imageDataDimensions[1]) , " , " ,\
-                        str(image_coordinate[2]+1) , "/" , str(self.imageDataDimensions[2]) , ")    " , str(voxVal) ]))
-            self.textPropZ.UpdateTextProp("".join(
-                [ "(" , str(image_coordinate[0]+1) , "/" , str(self.imageDataDimensions[0]) , " , " ,\
-                        str(image_coordinate[1]+1) , "/" , str(self.imageDataDimensions[1]) , " , " ,\
-                        str(image_coordinate[2]+1) , "/" , str(self.imageDataDimensions[2]) , ")    " , str(voxVal) ]))
+            self._text_prop_x.UpdateTextProp("".join(
+                [ "(" , str(image_coordinate[0]+1) , "/" , str(self._image_dimensions[0]) , " , " ,\
+                        str(image_coordinate[1]+1) , "/" , str(self._image_dimensions[1]) , " , " ,\
+                        str(image_coordinate[2]+1) , "/" , str(self._image_dimensions[2]) , ")    " , str(voxVal) ]))
+            self._text_prop_y.UpdateTextProp("".join(
+                [ "(" , str(image_coordinate[0]+1) , "/" , str(self._image_dimensions[0]) , " , " ,\
+                        str(image_coordinate[1]+1) , "/" , str(self._image_dimensions[1]) , " , " ,\
+                        str(image_coordinate[2]+1) , "/" , str(self._image_dimensions[2]) , ")    " , str(voxVal) ]))
+            self._text_prop_z.UpdateTextProp("".join(
+                [ "(" , str(image_coordinate[0]+1) , "/" , str(self._image_dimensions[0]) , " , " ,\
+                        str(image_coordinate[1]+1) , "/" , str(self._image_dimensions[1]) , " , " ,\
+                        str(image_coordinate[2]+1) , "/" , str(self._image_dimensions[2]) , ")    " , str(voxVal) ]))
             #
             self.lastImageCoordinates = list(image_coordinate)
             #
-            if(not cursorOff):
-                self.cursorX.UpdateCursorPosition(self.position)
-                self.cursorY.UpdateCursorPosition(self.position)
-                self.cursorZ.UpdateCursorPosition(self.position)
+            if not self._cursor_off:
+                self._cursor_x.update_cursor_position(self.position)
+                self._cursor_y.update_cursor_position(self.position)
+                self._cursor_z.update_cursor_position(self.position)
         else:
-            self.textPropX.UpdateTextProp("--")
-            self.textPropY.UpdateTextProp("--")
-            self.textPropZ.UpdateTextProp("--")
+            self._text_prop_x.UpdateTextProp("--")
+            self._text_prop_y.UpdateTextProp("--")
+            self._text_prop_z.UpdateTextProp("--")
         #
-        self.UpdateMasks(imViewer)
+        self.update_masks(imViewer)
         self.Render()
 
-    def DispatchArrowKeyUpdate(self, imViewer, move=(0, 0)):
-        if imViewer == self.viewX:
-            self.viewY.SetSlice(self.viewY.GetSlice() - move[0])
-            self.viewZ.SetSlice(self.viewZ.GetSlice() - move[1])
-            self.lastImageCoordinates[1] = self.viewY.GetSlice() - self.viewY.GetSliceMin()
-            self.lastImageCoordinates[2] = self.viewZ.GetSlice() - self.viewZ.GetSliceMin()
-        elif imViewer == self.viewY:
-            self.viewX.SetSlice(self.viewX.GetSlice() + move[0])
-            self.viewZ.SetSlice(self.viewZ.GetSlice() - move[1])
-            self.lastImageCoordinates[0] = self.viewX.GetSlice() - self.viewX.GetSliceMin()
-            self.lastImageCoordinates[2] = self.viewZ.GetSlice() - self.viewZ.GetSliceMin()
-        elif imViewer == self.viewZ:
-            self.viewX.SetSlice(self.viewX.GetSlice() + move[0])
-            self.viewY.SetSlice(self.viewY.GetSlice() + move[1])
-            self.lastImageCoordinates[0] = self.viewX.GetSlice() - self.viewX.GetSliceMin()
-            self.lastImageCoordinates[1] = self.viewY.GetSlice() - self.viewY.GetSliceMin()
+    def dispatch_arrow_key_update(self, imViewer, move=(0, 0)):
+        if imViewer == self._view_x:
+            self._view_y.SetSlice(self._view_y.GetSlice() - move[0])
+            self._view_z.SetSlice(self._view_z.GetSlice() - move[1])
+            self.lastImageCoordinates[1] = self._view_y.GetSlice() - self._view_y.GetSliceMin()
+            self.lastImageCoordinates[2] = self._view_z.GetSlice() - self._view_z.GetSliceMin()
+        elif imViewer == self._view_y:
+            self._view_x.SetSlice(self._view_x.GetSlice() + move[0])
+            self._view_z.SetSlice(self._view_z.GetSlice() - move[1])
+            self.lastImageCoordinates[0] = self._view_x.GetSlice() - self._view_x.GetSliceMin()
+            self.lastImageCoordinates[2] = self._view_z.GetSlice() - self._view_z.GetSliceMin()
+        elif imViewer == self._view_z:
+            self._view_x.SetSlice(self._view_x.GetSlice() + move[0])
+            self._view_y.SetSlice(self._view_y.GetSlice() + move[1])
+            self.lastImageCoordinates[0] = self._view_x.GetSlice() - self._view_x.GetSliceMin()
+            self.lastImageCoordinates[1] = self._view_y.GetSlice() - self._view_y.GetSliceMin()
         else:
             print("ERROR: Unspecified vtkImageViewer!")
             return
 
-        self.position[0] = self.viewX.GetSlice() * self.imageDataSpacing[0]
-        self.position[1] = self.viewY.GetSlice() * self.imageDataSpacing[1]
-        self.position[2] = self.viewZ.GetSlice() * self.imageDataSpacing[2]
+        self.position[0] = self._view_x.GetSlice() * self._image_spacing[0]
+        self.position[1] = self._view_y.GetSlice() * self._image_spacing[1]
+        self.position[2] = self._view_z.GetSlice() * self._image_spacing[2]
         #
-        voxVal = self.viewX.GetInput().GetScalarComponentAsDouble(
+        voxVal = self._view_x.GetInput().GetScalarComponentAsDouble(
             self.lastImageCoordinates[0], 
             self.lastImageCoordinates[1], 
             self.lastImageCoordinates[2], 
             0)
-        self.textPropX.UpdateTextProp("".join(
-            [ "(" , str(self.lastImageCoordinates[0] + 1) , "/" , str(self.imageDataDimensions[0]) , " , " ,\
-                    str(self.lastImageCoordinates[1] + 1) , "/" , str(self.imageDataDimensions[1]) , " , " ,\
-                    str(self.lastImageCoordinates[2] + 1) , "/" , str(self.imageDataDimensions[2]) , ")    " , str(voxVal) ]))
-        self.textPropY.UpdateTextProp("".join(
-            [ "(" , str(self.lastImageCoordinates[0] + 1) , "/" , str(self.imageDataDimensions[0]) , " , " ,\
-                    str(self.lastImageCoordinates[1] + 1) , "/" , str(self.imageDataDimensions[1]) , " , " ,\
-                    str(self.lastImageCoordinates[2] + 1) , "/" , str(self.imageDataDimensions[2]) , ")    " , str(voxVal) ]))
-        self.textPropZ.UpdateTextProp("".join(
-            [ "(" , str(self.lastImageCoordinates[0] + 1) , "/" , str(self.imageDataDimensions[0]) , " , " ,\
-                    str(self.lastImageCoordinates[1] + 1) , "/" , str(self.imageDataDimensions[1]) , " , " ,\
-                    str(self.lastImageCoordinates[2] + 1) , "/" , str(self.imageDataDimensions[2]) , ")    " , str(voxVal) ]))
+        self._text_prop_x.UpdateTextProp("".join(
+            [ "(" , str(self.lastImageCoordinates[0] + 1) , "/" , str(self._image_dimensions[0]) , " , " ,\
+                    str(self.lastImageCoordinates[1] + 1) , "/" , str(self._image_dimensions[1]) , " , " ,\
+                    str(self.lastImageCoordinates[2] + 1) , "/" , str(self._image_dimensions[2]) , ")    " , str(voxVal) ]))
+        self._text_prop_y.UpdateTextProp("".join(
+            [ "(" , str(self.lastImageCoordinates[0] + 1) , "/" , str(self._image_dimensions[0]) , " , " ,\
+                    str(self.lastImageCoordinates[1] + 1) , "/" , str(self._image_dimensions[1]) , " , " ,\
+                    str(self.lastImageCoordinates[2] + 1) , "/" , str(self._image_dimensions[2]) , ")    " , str(voxVal) ]))
+        self._text_prop_z.UpdateTextProp("".join(
+            [ "(" , str(self.lastImageCoordinates[0] + 1) , "/" , str(self._image_dimensions[0]) , " , " ,\
+                    str(self.lastImageCoordinates[1] + 1) , "/" , str(self._image_dimensions[1]) , " , " ,\
+                    str(self.lastImageCoordinates[2] + 1) , "/" , str(self._image_dimensions[2]) , ")    " , str(voxVal) ]))
         #
-        if not cursorOff:
-            self.cursorX.UpdateCursorPosition(self.position)
-            self.cursorY.UpdateCursorPosition(self.position)
-            self.cursorZ.UpdateCursorPosition(self.position)
+        if not self._cursor_off:
+            self._cursor_x.update_cursor_position(self.position)
+            self._cursor_y.update_cursor_position(self.position)
+            self._cursor_z.update_cursor_position(self.position)
         #
-        self.UpdateMasks(imViewer)
+        self.update_masks(imViewer)
         self.Render()    
 
-    def DispatchSliceUpdate(self, imViewer, slice):
-        if imViewer == self.viewX:
-            self.viewX.SetSlice(slice)
-            self.lastImageCoordinates[0] = slice - self.viewX.GetSliceMin()
-            self.position[0] = self.viewX.GetSlice() * self.imageDataSpacing[0]
-        elif imViewer == self.viewY:
-            self.viewY.SetSlice(slice)
-            self.lastImageCoordinates[1] = slice - self.viewY.GetSliceMin()
-            self.position[1] = self.viewY.GetSlice() * self.imageDataSpacing[1]
-        elif imViewer == self.viewZ:
-            self.viewZ.SetSlice(slice)
-            self.lastImageCoordinates[2] = slice - self.viewZ.GetSliceMin()
-            self.position[2] = self.viewZ.GetSlice() * self.imageDataSpacing[2]
+    def dispatch_slice_update(self, imViewer, slice):
+        if imViewer == self._view_x:
+            self._view_x.SetSlice(slice)
+            self.lastImageCoordinates[0] = slice - self._view_x.GetSliceMin()
+            self.position[0] = self._view_x.GetSlice() * self._image_spacing[0]
+        elif imViewer == self._view_y:
+            self._view_y.SetSlice(slice)
+            self.lastImageCoordinates[1] = slice - self._view_y.GetSliceMin()
+            self.position[1] = self._view_y.GetSlice() * self._image_spacing[1]
+        elif imViewer == self._view_z:
+            self._view_z.SetSlice(slice)
+            self.lastImageCoordinates[2] = slice - self._view_z.GetSliceMin()
+            self.position[2] = self._view_z.GetSlice() * self._image_spacing[2]
         else:
             print("ERROR: Unspecified vtkImageViewer!")
             return
         #
-        voxVal = self.viewX.GetInput().GetScalarComponentAsDouble(
+        voxVal = self._view_x.GetInput().GetScalarComponentAsDouble(
             self.lastImageCoordinates[0] , self.lastImageCoordinates[1] , self.lastImageCoordinates[2] , 0)
-        self.textPropX.UpdateTextProp("".join(
-            [ "(" , str(self.lastImageCoordinates[0] + 1) , "/" , str(self.imageDataDimensions[0]) , " , " ,\
-                    str(self.lastImageCoordinates[1] + 1) , "/" , str(self.imageDataDimensions[1]) , " , " ,\
-                    str(self.lastImageCoordinates[2] + 1) , "/" , str(self.imageDataDimensions[2]) , ")    " , str(voxVal) ]))
-        self.textPropY.UpdateTextProp("".join(
-            [ "(" , str(self.lastImageCoordinates[0] + 1) , "/" , str(self.imageDataDimensions[0]) , " , " ,\
-                    str(self.lastImageCoordinates[1] + 1) , "/" , str(self.imageDataDimensions[1]) , " , " ,\
-                    str(self.lastImageCoordinates[2] + 1) , "/" , str(self.imageDataDimensions[2]) , ")    " , str(voxVal) ]))
-        self.textPropZ.UpdateTextProp("".join(
-            [ "(" , str(self.lastImageCoordinates[0] + 1) , "/" , str(self.imageDataDimensions[0]) , " , " ,\
-                    str(self.lastImageCoordinates[1] + 1) , "/" , str(self.imageDataDimensions[1]) , " , " ,\
-                    str(self.lastImageCoordinates[2] + 1) , "/" , str(self.imageDataDimensions[2]) , ")    " , str(voxVal) ]))
+        self._text_prop_x.UpdateTextProp("".join(
+            [ "(" , str(self.lastImageCoordinates[0] + 1) , "/" , str(self._image_dimensions[0]) , " , " ,\
+                    str(self.lastImageCoordinates[1] + 1) , "/" , str(self._image_dimensions[1]) , " , " ,\
+                    str(self.lastImageCoordinates[2] + 1) , "/" , str(self._image_dimensions[2]) , ")    " , str(voxVal) ]))
+        self._text_prop_y.UpdateTextProp("".join(
+            [ "(" , str(self.lastImageCoordinates[0] + 1) , "/" , str(self._image_dimensions[0]) , " , " ,\
+                    str(self.lastImageCoordinates[1] + 1) , "/" , str(self._image_dimensions[1]) , " , " ,\
+                    str(self.lastImageCoordinates[2] + 1) , "/" , str(self._image_dimensions[2]) , ")    " , str(voxVal) ]))
+        self._text_prop_z.UpdateTextProp("".join(
+            [ "(" , str(self.lastImageCoordinates[0] + 1) , "/" , str(self._image_dimensions[0]) , " , " ,\
+                    str(self.lastImageCoordinates[1] + 1) , "/" , str(self._image_dimensions[1]) , " , " ,\
+                    str(self.lastImageCoordinates[2] + 1) , "/" , str(self._image_dimensions[2]) , ")    " , str(voxVal) ]))
         #
-        if not cursorOff:
-            self.cursorX.UpdateCursorPosition(self.position)
-            self.cursorY.UpdateCursorPosition(self.position)
-            self.cursorZ.UpdateCursorPosition(self.position)
+        if not self._cursor_off:
+            self._cursor_x.update_cursor_position(self.position)
+            self._cursor_y.update_cursor_position(self.position)
+            self._cursor_z.update_cursor_position(self.position)
         #
-        self.UpdateMasks(imViewer)
+        self.update_masks(imViewer)
         self.Render()
 
-    def RefreshCurrentWindowLevel(self):
-        self.current_window_level = self.viewX.GetColorLevel()
-        self.current_window_width = self.viewX.GetColorWindow()
+    def refresh_current_window_level(self):
+        self.current_window_level = self._view_x.GetColorLevel()
+        self.current_window_width = self._view_x.GetColorWindow()
 
-    def DispatchWindowLevelEvent(self,current_dispatched_event_position,initial_dispatched_event_positions):
+    def dispatch_window_level_event(self,current_dispatched_event_position,initial_dispatched_event_positions):
         level = self.current_window_level + round(
             (current_dispatched_event_position[0] - initial_dispatched_event_positions[0]) / 0.25)
         width = self.current_window_width + round(
@@ -640,31 +658,31 @@ class ThreePlaneView():
         # width = max(self.current_window_width + round(
         #    (current_dispatched_event_position[1]-initial_dispatched_event_positions[1])/.25) , 10.)
         #
-        self.viewX.SetColorLevel(level)
-        self.viewY.SetColorLevel(level)
-        self.viewZ.SetColorLevel(level)
+        self._view_x.SetColorLevel(level)
+        self._view_y.SetColorLevel(level)
+        self._view_z.SetColorLevel(level)
         #
-        self.viewX.SetColorWindow(width)
-        self.viewY.SetColorWindow(width)
-        self.viewZ.SetColorWindow(width)
+        self._view_x.SetColorWindow(width)
+        self._view_y.SetColorWindow(width)
+        self._view_z.SetColorWindow(width)
         #
         self.Render()
 
-    def DispatchWindowLevelReset(self,reset_window,reset_level):
+    def dispatch_window_level_reset(self,reset_window,reset_level):
         if reset_window:
-            self.viewX.SetColorWindow(self.initial_window_width)
-            self.viewY.SetColorWindow(self.initial_window_width)
-            self.viewZ.SetColorWindow(self.initial_window_width)
+            self._view_x.SetColorWindow(self.initial_window_width)
+            self._view_y.SetColorWindow(self.initial_window_width)
+            self._view_z.SetColorWindow(self.initial_window_width)
         #
         if reset_level :
-            self.viewX.SetColorLevel(self.initial_window_level)
-            self.viewY.SetColorLevel(self.initial_window_level)
-            self.viewZ.SetColorLevel(self.initial_window_level)
+            self._view_x.SetColorLevel(self.initial_window_level)
+            self._view_y.SetColorLevel(self.initial_window_level)
+            self._view_z.SetColorLevel(self.initial_window_level)
         #
-        self.RefreshCurrentWindowLevel()
+        self.refresh_current_window_level()
         self.Render()
 
-    def TakeScreenshot(self):
+    def take_screenshots(self,):
         ## Screenshot PNGImageWriter and WindowToImageFilter:
         screenshotImageWRiterX = vtk.vtkPNGWriter()
         screenshotImageWRiterY = vtk.vtkPNGWriter()
@@ -674,9 +692,9 @@ class ThreePlaneView():
         screenshotY = vtk.vtkWindowToImageFilter()
         screenshotZ = vtk.vtkWindowToImageFilter()
         #
-        screenshotX.SetInput(self.viewX.GetRenderWindow())
-        screenshotY.SetInput(self.viewY.GetRenderWindow())
-        screenshotZ.SetInput(self.viewZ.GetRenderWindow())
+        screenshotX.SetInput(self._view_x.GetRenderWindow())
+        screenshotY.SetInput(self._view_y.GetRenderWindow())
+        screenshotZ.SetInput(self._view_z.GetRenderWindow())
         #
         screenshotX.SetScale(3, 3)
         screenshotY.SetScale(3, 3)
@@ -695,14 +713,14 @@ class ThreePlaneView():
         screenshotZ.Update()
         #
         temp_filename_x = "".join(
-            [ "./" , str(self.viewX.GetRenderWindow().GetWindowName()).split(" (X)")[0] , 
-              "__X-" , str(self.viewX.GetSlice()) , ".png" ])
+            [ "./" , str(self._view_x.GetRenderWindow().GetWindowName()).split(" (X)")[0] , 
+              "__X-" , str(self._view_x.GetSlice()) , ".png" ])
         temp_filename_y = "".join(
-            [ "./" , str(self.viewY.GetRenderWindow().GetWindowName()).split(" (Y)")[0] , 
-              "__Y-" , str(self.viewY.GetSlice()) , ".png" ])
+            [ "./" , str(self._view_y.GetRenderWindow().GetWindowName()).split(" (Y)")[0] , 
+              "__Y-" , str(self._view_y.GetSlice()) , ".png" ])
         temp_filename_z = "".join(
-            [ "./" , str(self.viewZ.GetRenderWindow().GetWindowName()).split(" (Z)")[0] , 
-              "__Z-" , str(self.viewZ.GetSlice()) , ".png" ])
+            [ "./" , str(self._view_z.GetRenderWindow().GetWindowName()).split(" (Z)")[0] , 
+              "__Z-" , str(self._view_z.GetSlice()) , ".png" ])
         #
         screenshotImageWRiterX.SetFileName(temp_filename_x)
         screenshotImageWRiterY.SetFileName(temp_filename_y)
@@ -716,38 +734,38 @@ class ThreePlaneView():
         screenshotImageWRiterY.Write()
         screenshotImageWRiterZ.Write()
 
-    def ChangeCurserVisibility(self):
-        if not cursorOff:
-            self.cursorX.CursorVisibility()
-            self.cursorY.CursorVisibility()
-            self.cursorZ.CursorVisibility()
+    def change_curser_visibility(self):
+        if not self._cursor_off:
+            self._cursor_x.cursor_visibility()
+            self._cursor_y.cursor_visibility()
+            self._cursor_z.cursor_visibility()
         self.Render()
 
 
-    def Initialize(self):
-        self.renderWindowInteractorX.Initialize()
-        self.renderWindowInteractorY.Initialize()
-        self.renderWindowInteractorZ.Initialize()
+    def initialize(self):
+        self._render_window_interactor_x.Initialize()
+        self._render_window_interactor_y.Initialize()
+        self._render_window_interactor_z.Initialize()
 
     def Render(self):
-        self.viewX.Render()
-        self.viewY.Render()
-        self.viewZ.Render()
+        self._view_x.Render()
+        self._view_y.Render()
+        self._view_z.Render()
 
     def Start(self):
-        self.renderWindowInteractorX.Start()
-        self.renderWindowInteractorY.Start()
-        self.renderWindowInteractorZ.Start()
+        self._render_window_interactor_x.Start()
+        self._render_window_interactor_y.Start()
+        self._render_window_interactor_z.Start()
         
     def Finalize(self):
-        self.renderWindowInteractorX.GetRenderWindow().Finalize()
-        self.renderWindowInteractorY.GetRenderWindow().Finalize()
-        self.renderWindowInteractorZ.GetRenderWindow().Finalize()
+        self._render_window_interactor_x.GetRenderWindow().Finalize()
+        self._render_window_interactor_y.GetRenderWindow().Finalize()
+        self._render_window_interactor_z.GetRenderWindow().Finalize()
 
     def TerminateApp(self):
-        self.renderWindowInteractorX.TerminateApp()
-        self.renderWindowInteractorY.TerminateApp()
-        self.renderWindowInteractorZ.TerminateApp()
+        self._render_window_interactor_x.TerminateApp()
+        self._render_window_interactor_y.TerminateApp()
+        self._render_window_interactor_z.TerminateApp()
         #
         quit()
 
@@ -844,8 +862,7 @@ def main():
         image_flat_np_array = None
 
     # Instantiate MPR viewer:
-    mpr = ThreePlaneView()
-    mpr.SetImageDate(imageData)
+    mpr = ThreePlaneView(imageData, cursor_off=False)
 
     # Load Mask Data, if mask file is specified:
     maskData  = None
@@ -947,7 +964,7 @@ def main():
             # maskData.SetDirectionMatrix(imageData.GetDirectionMatrix())
             print(maskData)
 
-        mpr.SetMaskData(maskData, maskColoursList)
+        mpr.set_mask_data(maskData, maskColoursList)
         
         if maskData.GetSpacing() != imageData.GetSpacing():
             print("WARNING: Image and mask have different spacings!")
@@ -957,31 +974,31 @@ def main():
 
     # Set window level:
     if args.window_size == []:
-        mpr.SetViewersWindowSize()
+        mpr.set_viewers_window_size()
     elif len(args.window_size) == 1:
-        mpr.SetViewersWindowSize(args.window_size[0], args.window_size[0])
+        mpr.set_viewers_window_size(args.window_size[0], args.window_size[0])
     elif len(args.window_size) == 2:
-        mpr.SetViewersWindowSize(args.window_size[0] , args.window_size[1])
+        mpr.set_viewers_window_size(args.window_size[0] , args.window_size[1])
     else:
         raise Exception(f"Window size argument is wrong: \"{args.window_size}\"")
 
     # Set background
     if args.background is None:
-        mpr.SetViewersBackgroundColour()
+        mpr.set_viewers_background_color()
     else:
-        mpr.SetViewersBackgroundColour(args.background[0] , args.background[1] , args.background[2])
+        mpr.set_viewers_background_color(args.background[0] , args.background[1] , args.background[2])
 
     # Set pixel interpolation
     if args.interpolation is None :
-        mpr.SetInterpolation()
+        mpr.set_interpolation()
     else:
-        mpr.SetInterpolation(args.interpolation)
+        mpr.set_interpolation(args.interpolation)
 
     # Set Window width, level, and title
+    mpr.set_viewers_window_level(args.window_level, args.window_width) 
+    mpr.set_viewers_window_name(args.window_title)
+    mpr.initialize()
     mpr.Render()
-    mpr.SetViewersWindowLevel(args.window_level, args.window_width) 
-    mpr.SetViewersWindowName(args.window_title)
-    mpr.Initialize()
     mpr.Start()
 
     # Close window:
