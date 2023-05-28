@@ -848,18 +848,6 @@ def main():
         #     0.0, 1.0, 0.0,
         #     0.0, 0.0, 1.0))
         print(imageData)
-        
-    # Use numpy to process the mask:
-    if not True:
-        dimension = imageData.GetDimensions()
-        image_flat_np_array = vtk_numpy_support.vtk_to_numpy(imageData.GetPointData().GetScalars())
-        image_np_array = image_flat_np_array.reshape(dimension)
-        print("Image array, {}, min {}, median {}, mean {}, max {}".format(
-            image_np_array.shape, image_np_array.min(), np.median(image_np_array), 
-            image_np_array.mean(), image_np_array.max()))
-        # Clean up:
-        image_np_array = None
-        image_flat_np_array = None
 
     # Instantiate MPR viewer:
     mpr = ThreePlaneView(imageData, cursor_off=False)
@@ -971,6 +959,32 @@ def main():
             print(f"{imageData.GetSpacing()} != {maskData.GetSpacing()}")
             print("Using image spacing...")
             maskData.SetSpacing(imageData.GetSpacing())
+        
+    # Export 
+    export_masked_image_to_npy = True
+    if export_masked_image_to_npy and maskData is not None:
+        #
+        ## Check dimensions:
+        image_dims = imageData.GetDimensions()
+        mask_dims = maskData.GetDimensions()
+        assert(image_dims == mask_dims)
+        #
+        ## Get image and mask as numpy arrays
+        image_flat_np_array = vtk_numpy_support.vtk_to_numpy(imageData.GetPointData().GetScalars())
+        image_np_array = image_flat_np_array.reshape(image_dims)
+        mask_flat_np_array = vtk_numpy_support.vtk_to_numpy(maskData.GetPointData().GetScalars())
+        mask_np_array = mask_flat_np_array.reshape(mask_dims)
+        #
+        ## Mask image and export to NumPy file:
+        masked_image = np.where(mask_np_array > 0, image_np_array, -1024.0)
+        np.save("./masked_image.npy", masked_image)
+        #
+        ## Clean up:
+        image_np_array = None
+        image_flat_np_array = None
+        mask_np_array = None
+        mask_flat_np_array = None
+        masked_image = None
 
     # Set window level:
     if args.window_size == []:
