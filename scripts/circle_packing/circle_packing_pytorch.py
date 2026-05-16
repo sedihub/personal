@@ -568,7 +568,7 @@ def main(argv):
     )
 
     print("=" * 60)
-    print("Circle packing optimisation – unit square, n=3")
+    print(f"Circle packing optimisation – unit square, n={n}")
     print("=" * 60)
 
     result = optimize(
@@ -577,7 +577,7 @@ def main(argv):
         penalty_weight=100.0,                # TO-DO: Expose these as flags
         learn_centers=True,                  # Set to False to freeze the centers
         n_steps=20000,
-        lr=1.0e-3,
+        lr=1.0e-4,
         log_every=500,
         device=torch.device("cpu"),          # Set to "mps" for Apple GPU
     )
