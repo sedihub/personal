@@ -32,15 +32,18 @@ python3 ./circle_packing_pytorch.py \
   --max_margin_param=2.0
 """
 
-import math
-import torch
-import torch.nn as nn
-from typing import Optional
-import random
-import matplotlib.pyplot as plt
-import matplotlib.patches as patches
+
 from absl import flags
 from absl import app
+import matplotlib.pyplot as plt
+import matplotlib.patches as patches
+import math
+import random
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from typing import Optional
+
 
 flags.DEFINE_integer(
     "n",
@@ -527,12 +530,14 @@ def main(argv):
     print("=" * 60)
 
     result = optimize(
-        centers,
-        default_init=initial_radius,
+        init_centers=centers,
+        default_init_radius=initial_radius,
         penalty_weight=100.0,  # TO-DO: Expose these as flags
+        learn_centers=False,
         n_steps=10000,
         lr=1.0e-3,
         log_every=500,
+        device=torch.device("mps"), # Apple GPU
     )
 
     # Display results:
