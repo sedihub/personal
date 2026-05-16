@@ -498,7 +498,7 @@ def optimize(n: Optional[int] = None,
                 _radii_np.size, 
                 _centers_np.tolist(),
                 max_radius=_radii_np.tolist(),
-                filename="__DELETE_ME__last_non_nan.png",
+                filename=FLAGS.png_filename.replace(".png", "_final.png"),
             )
             raise ValueError("NaN detected, terminating training.")
 
@@ -577,7 +577,7 @@ def main(argv):
         penalty_weight=100.0,                # TO-DO: Expose these as flags
         learn_centers=True,                  # Set to False to freeze the centers
         n_steps=20000,
-        lr=2.5e-4,
+        lr=1.0e-3,
         log_every=500,
         device=torch.device("cpu"),          # Set to "mps" for Apple GPU
     )
