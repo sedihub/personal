@@ -396,10 +396,12 @@ class CirclePacker(nn.Module):
 # Convenience optimisation loop
 # ---------------------------------------------------------------------------
 
-def optimize(centers: torch.Tensor,
+def optimize(n: Optional[int] = None,
+             init_centers: Optional[torch.Tensor] = None,
              init_radii: Optional[torch.Tensor] = None,
-             default_init: float = 0.01,
+             default_init_radius: float = 0.01,
              penalty_weight: float = 1.0,
+             learn_centers: bool = True,
              n_steps: int = 2000,
              lr: float = 1e-2,
              log_every: int = 200,
@@ -409,10 +411,15 @@ def optimize(centers: torch.Tensor,
 
     Parameters
     ----------
-    centers : Tensor, shape (n, 2)
+    n : int or None
+        Number of circles.  Inferred from `init_centers` when not given.
+    init_centers : Tensor or None, shape (n, 2)
+        Initial center coordinates in [0, 1].  Random if None.
     init_radii : Tensor or None, shape (n,)
-    default_init : float
+    default_init_radius : float
     penalty_weight : float
+    learn_centers : bool
+        Set False to keep centers fixed and only optimise radii.
     n_steps : int
     lr : float
     log_every : int
@@ -422,22 +429,34 @@ def optimize(centers: torch.Tensor,
     Returns
     -------
     dict with keys:
-        radii       – final optimised radii (Tensor, shape (n,))
-        sum_radii   – scalar sum of radii (float)
-        loss_curve  – list of loss values recorded at each step
-        model       – the CirclePacker instance
+        radii       - final optimised radii (Tensor, shape (n,))
+        centers     - final optimised centers (Tensor, shape (n, 2))
+        sum_radii   - scalar sum of radii (float)
+        loss_curve  - list of loss values recorded at each step
+        model       - the CirclePacker instance
     """
     if device is None:
         device = torch.device("cpu")
 
-    centers = centers.to(device)
+    if init_centers is not None:
+        init_centers = init_centers.to(device)
+        if n is None:
+            n = init_centers.shape[0]
+    else:
+        if n is None:
+            raise ValueError("Provide either `n` or `init_centers`.")
+
     if init_radii is not None:
         init_radii = init_radii.to(device)
 
-    model = CirclePacker(centers,
-                         init_radii=init_radii,
-                         default_init=default_init,
-                         penalty_weight=penalty_weight).to(device)
+    model = CirclePacker(
+        n=n,
+        init_centers=init_centers,
+        init_radii=init_radii,
+        default_init_radius=default_init_radius,
+        penalty_weight=penalty_weight,
+        learn_centers=learn_centers,
+    ).to(device)
 
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     loss_curve = []
@@ -450,17 +469,22 @@ def optimize(centers: torch.Tensor,
         loss_curve.append(loss.item())
 
         if log_every and step % log_every == 0:
-            radii = model.radii.detach()
+            radii   = model.radii.detach()
+            centers = model.centers.detach()
             print(f"Step {step:5d} | loss={loss.item():+.6f} | "
                   f"sum_r={radii.sum().item():.6f} | "
-                  f"radii={radii.cpu().numpy().round(4)}")
+                  f"radii={radii.cpu().numpy().round(4)} | "
+                  f"centers=\n{centers.cpu().numpy().round(4)}")
 
-    final_radii = model.radii.detach()
+    final_radii   = model.radii.detach()
+    final_centers = model.centers.detach()
+
     return {
-        "radii": final_radii,
-        "sum_radii": final_radii.sum().item(),
+        "radii":      final_radii,
+        "centers":    final_centers,
+        "sum_radii":  final_radii.sum().item(),
         "loss_curve": loss_curve,
-        "model": model,
+        "model":      model,
     }
 
 
