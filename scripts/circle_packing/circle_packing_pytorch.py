@@ -474,10 +474,12 @@ def optimize(n: Optional[int] = None,
         if log_every and step % log_every == 0:
             radii   = model.radii.detach()
             centers = model.centers.detach()
-            print(f"Step {step:5d} | loss={loss.item():+.6f} | "
-                  f"sum_r={radii.sum().item():.6f} | "
-                  f"radii={radii.cpu().numpy().round(4)} | "
-                  f"centers=\n{centers.cpu().numpy().round(4)}")
+            print(
+            	f"\tStep {step:5d} | loss={loss.item():+.6f} | "
+                f"sum_r={radii.sum().item():.6f} | "
+                # f"radii={radii.cpu().numpy().round(4)} | "
+                # f"centers=\n{centers.cpu().numpy().round(4)}"
+           	)
 
     final_radii   = model.radii.detach()
     final_centers = model.centers.detach()
