@@ -361,33 +361,33 @@ class CirclePacker(nn.Module):
             # x = 0  wall: overlap when cx[i] < ri
             dist_x0 = cx[i]
             total = total + torch.where(
-            	dist_x0 < ri,
-            	_circle_wall_overlap(ri, dist_x0),
-            	zero,
+                dist_x0 < ri,
+                _circle_wall_overlap(ri, dist_x0),
+                zero,
             )
 
             # x = 1  wall: overlap when (1 - cx[i]) < ri
             dist_x1 = 1.0 - cx[i]
             total = total + torch.where(
-            	dist_x1 < ri,
-            	_circle_wall_overlap(ri, dist_x1),
-            	zero,
+                dist_x1 < ri,
+                _circle_wall_overlap(ri, dist_x1),
+                zero,
             )
 
             # y = 0  wall: overlap when cy[i] < ri
             dist_y0 = cy[i]
             total = total + torch.where(
-            	dist_y0 < ri,
-            	_circle_wall_overlap(ri, dist_y0), 
-            	zero,
+                dist_y0 < ri,
+                _circle_wall_overlap(ri, dist_y0), 
+                zero,
             )
 
             # y = 1  wall: overlap when (1 - cy[i]) < ri
             dist_y1 = 1.0 - cy[i]
             total = total + torch.where(
-            	dist_y1 < ri, 
-            	_circle_wall_overlap(ri, dist_y1),
-            	zero,
+                dist_y1 < ri, 
+                _circle_wall_overlap(ri, dist_y1),
+                zero,
             )
 
         return total
@@ -479,6 +479,8 @@ def optimize(n: Optional[int] = None,
     loss_curve = []
 
     for step in range(1, n_steps + 1):
+        _centers_np = model.centers.detach().clone().cpu().numpy()
+        _radii_np = model.radii.detach().clone().cpu().numpy()
         # print(f"\t{model.raw_centers.detach().cpu()=}", end=", ")
         # print(f"{model.raw_radii.detach().cpu()=}", end="  --> ")
         optimizer.zero_grad()
@@ -488,8 +490,17 @@ def optimize(n: Optional[int] = None,
         loss_curve.append(loss.item())
         # print(f"\t{model.raw_centers.detach().cpu()}", end=", ")
         # print(f"{model.raw_radii.detach().cpu()}")
-        if torch.isnan(loss):
-            raise ValueError("NaN loss detected, terminating training.")
+        if torch.isnan(loss) or \
+           torch.isnan(model.radii).any().item() or \
+           torch.isnan(model.centers).any().item():
+            # print(_radii_np.size, _centers_np.tolist(), _radii_np.tolist())
+            plot(
+                _radii_np.size, 
+                _centers_np.tolist(),
+                max_radius=_radii_np.tolist(),
+                filename="__DELETE_ME__last_non_nan.png",
+            )
+            raise ValueError("NaN detected, terminating training.")
 
         if log_every and step % log_every == 0:
             radii   = model.radii.detach()
@@ -503,12 +514,12 @@ def optimize(n: Optional[int] = None,
             delta_centers = torch.linalg.norm(initial_centers - centers).item()
 
             print(
-            	f"\tStep {step:6d} | loss={loss.item():+.6f} | "
+                f"\tStep {step:6d} | loss={loss.item():+.6f} | "
                 f"sum_r={sum_radii:.6f} | penalty={penalty:.6f} | "
                 f"δ centers={delta_centers:.6f}"
                 # f"radii={radii.cpu().numpy().round(4)} | "
                 # f"centers=\n{centers.cpu().numpy().round(4)}"
-           	)
+               )
 
     final_radii   = model.radii.detach()
     final_centers = model.centers.detach()
@@ -536,7 +547,7 @@ def main(argv):
     initial_radius = FLAGS.initial_radius
     max_margin_param = FLAGS.max_margin_param
 
-	# Set Python random seed:    
+    # Set Python random seed:    
     if seed is not None:
         random.seed(seed)
 
@@ -565,7 +576,7 @@ def main(argv):
         default_init_radius=initial_radius,
         penalty_weight=100.0,                # TO-DO: Expose these as flags
         learn_centers=True,                  # Set to False to freeze the centers
-        n_steps=40000,
+        n_steps=20000,
         lr=2.5e-4,
         log_every=500,
         device=torch.device("cpu"),          # Set to "mps" for Apple GPU
