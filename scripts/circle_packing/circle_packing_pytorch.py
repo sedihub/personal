@@ -219,120 +219,175 @@ def _circle_wall_overlap(r: torch.Tensor, dist: torch.Tensor) -> torch.Tensor:
 
 class CirclePacker(nn.Module):
     """
-    Learnable radii for n circles with fixed centers inside a unit square.
+    Jointly learnable centers and radii for n circles inside a unit square.
+
+    Centers are parameterised as sigmoid(raw_centers) so they always lie
+    strictly inside (0, 1).  Radii are parameterised as softplus(raw_radii)
+    so they are always positive.
 
     Parameters
     ----------
-    centers : Tensor, shape (n, 2)
-        Fixed (x, y) coordinates of circle centers.  Values must lie in [0, 1].
+    n : int
+        Number of circles.
+    init_centers : Tensor or None, shape (n, 2)
+        Initial center coordinates in [0, 1].  If None, centers are sampled
+        uniformly at random from (0.1, 0.9) to avoid starting on the boundary.
     init_radii : Tensor or None, shape (n,)
-        Initial radii.  If None, all radii start at `default_init`.
-    default_init : float
+        Initial radii.  If None, all radii start at `default_init_radius`.
+    default_init_radius : float
         Fallback initial radius when `init_radii` is None.
     penalty_weight : float
         Scalar multiplier applied to all penalty terms.
+    learn_centers : bool
+        If False the centers are kept fixed (registered as a buffer instead of
+        a Parameter), and only the radii are optimised.
     """
 
     def __init__(self,
-                 centers: torch.Tensor,
+                 n: int,
+                 init_centers: Optional[torch.Tensor] = None,
                  init_radii: Optional[torch.Tensor] = None,
-                 default_init: float = 0.01,
-                 penalty_weight: float = 1.0):
+                 default_init_radius: float = 0.01,
+                 penalty_weight: float = 1.0,
+                 learn_centers: bool = True):
         super().__init__()
 
-        n = centers.shape[0]
-        self.register_buffer("centers", centers.float())
+        self.n = n
         self.penalty_weight = penalty_weight
+        self.learn_centers = learn_centers
 
-        if init_radii is not None:
-            raw_init = self._to_raw(init_radii.float())
+        # ---- Centers -------------------------------------------------------
+        if init_centers is not None:
+            raw_c = self._centers_to_raw(init_centers.float())
         else:
-            raw_init = self._to_raw(
-                torch.full((n,), default_init, dtype=torch.float32))
+            # Sample uniformly in (0.1, 0.9) then convert to raw logits
+            uniform = torch.empty(n, 2).uniform_(0.1, 0.9)
+            raw_c = self._centers_to_raw(uniform)
 
-        # Radii are parameterised as softplus(raw) so they stay positive.
-        self.raw_radii = nn.Parameter(raw_init)
+        if learn_centers:
+            self.raw_centers = nn.Parameter(raw_c)
+        else:
+            # Fixed: buffer moves with .to(device) but receives no gradient
+            self.register_buffer("raw_centers", raw_c)
+
+        # ---- Radii ---------------------------------------------------------
+        if init_radii is not None:
+            raw_r = self._radii_to_raw(init_radii.float())
+        else:
+            raw_r = self._radii_to_raw(
+                torch.full((n,), default_init_radius, dtype=torch.float32))
+
+        self.raw_radii = nn.Parameter(raw_r)
 
     # ------------------------------------------------------------------
     # Parameterisation helpers
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _to_raw(radii: torch.Tensor) -> torch.Tensor:
+    def _centers_to_raw(centers: torch.Tensor) -> torch.Tensor:
+        """Inverse of sigmoid, mapping (0, 1) -> R."""
+        c = centers.clamp(1e-6, 1.0 - 1e-6)
+        return torch.log(c / (1.0 - c))
+
+    @staticmethod
+    def _radii_to_raw(radii: torch.Tensor) -> torch.Tensor:
         """Inverse of softplus: raw = log(exp(r) - 1)."""
         return torch.log(torch.expm1(radii.clamp(min=1e-6)))
 
     @property
+    def centers(self) -> torch.Tensor:
+        """Center coordinates in (0, 1), shape (n, 2)."""
+        return torch.sigmoid(self.raw_centers)
+
+    @property
     def radii(self) -> torch.Tensor:
-        """Positive radii obtained via softplus."""
-        return nn.functional.softplus(self.raw_radii)
+        """Positive radii, shape (n,)."""
+        return F.softplus(self.raw_radii)
 
     # ------------------------------------------------------------------
     # Penalty terms
     # ------------------------------------------------------------------
 
     def circle_circle_penalty(self) -> torch.Tensor:
-        """Total pairwise circle–circle overlap area."""
-        r = self.radii                          # (n,)
-        cx = self.centers                       # (n, 2)
-        n = r.shape[0]
+        """
+        Total pairwise circle-circle overlap area.
+
+        The overlap formula is evaluated for every pair; a differentiable
+        torch.where mask zeroes out pairs that are not actually overlapping,
+        preserving gradient flow through the distance d and radii.
+        """
+        r  = self.radii    # (n,)
+        cx = self.centers  # (n, 2)
+        n  = self.n
 
         total = torch.zeros(1, dtype=r.dtype, device=r.device)
 
         for i in range(n):
             for j in range(i + 1, n):
-                d = torch.norm(cx[i] - cx[j])
+                d     = torch.norm(cx[i] - cx[j])
                 sum_r = r[i] + r[j]
-                if d < sum_r:                   # circles overlap
-                    total = total + _circle_circle_overlap(r[i], r[j], d)
+
+                # Compute unconditionally so autograd can trace through d and r,
+                # then zero out when there is no actual overlap.
+                overlap = _circle_circle_overlap(r[i], r[j], d)
+                total   = total + torch.where(d < sum_r, overlap,
+                                              torch.zeros_like(overlap))
 
         return total
 
     def circle_boundary_penalty(self) -> torch.Tensor:
-        """Total circle–boundary overlap area for all four walls."""
-        r = self.radii
-        cx = self.centers[:, 0]                 # x-coordinates
-        cy = self.centers[:, 1]                 # y-coordinates
-        n = r.shape[0]
+        """
+        Total circle-boundary overlap area for all four walls.
+
+        Same differentiable-mask strategy: compute the segment area
+        unconditionally then zero it out when the circle does not reach
+        the wall.
+        """
+        r  = self.radii
+        cx = self.centers[:, 0]  # x-coordinates
+        cy = self.centers[:, 1]  # y-coordinates
+        n  = self.n
 
         total = torch.zeros(1, dtype=r.dtype, device=r.device)
 
         for i in range(n):
-            ri = r[i]
+            ri   = r[i]
+            zero = torch.zeros_like(ri)
 
             # x = 0  wall: overlap when cx[i] < ri
             dist_x0 = cx[i]
-            if dist_x0 < ri:
-                total = total + _circle_wall_overlap(ri, dist_x0)
+            total = total + torch.where(dist_x0 < ri,
+                                        _circle_wall_overlap(ri, dist_x0), zero)
 
             # x = 1  wall: overlap when (1 - cx[i]) < ri
             dist_x1 = 1.0 - cx[i]
-            if dist_x1 < ri:
-                total = total + _circle_wall_overlap(ri, dist_x1)
+            total = total + torch.where(dist_x1 < ri,
+                                        _circle_wall_overlap(ri, dist_x1), zero)
 
             # y = 0  wall: overlap when cy[i] < ri
             dist_y0 = cy[i]
-            if dist_y0 < ri:
-                total = total + _circle_wall_overlap(ri, dist_y0)
+            total = total + torch.where(dist_y0 < ri,
+                                        _circle_wall_overlap(ri, dist_y0), zero)
 
             # y = 1  wall: overlap when (1 - cy[i]) < ri
             dist_y1 = 1.0 - cy[i]
-            if dist_y1 < ri:
-                total = total + _circle_wall_overlap(ri, dist_y1)
+            total = total + torch.where(dist_y1 < ri,
+                                        _circle_wall_overlap(ri, dist_y1), zero)
 
         return total
 
     # ------------------------------------------------------------------
-    # Forward: returns the scalar loss to be *minimised*
+    # Forward
     # ------------------------------------------------------------------
 
     def forward(self) -> torch.Tensor:
         """
-        Loss = −sum(radii)  +  penalty_weight · (circle–circle + boundary penalties)
+        Loss = -sum(radii)  +  penalty_weight * (circle-circle + boundary)
 
-        Minimising this loss maximises the sum of radii while suppressing overlaps.
+        Minimising this loss maximises the sum of radii while suppressing
+        all overlaps.
         """
-        sum_r = self.radii.sum()
+        sum_r   = self.radii.sum()
         penalty = self.circle_circle_penalty() + self.circle_boundary_penalty()
         return -sum_r + self.penalty_weight * penalty
 
