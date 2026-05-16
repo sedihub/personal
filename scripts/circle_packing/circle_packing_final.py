@@ -1,7 +1,38 @@
+"""
+T.B.D.
+"""
+
 import random
 import math
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
+from absl import flags
+from absl import app
+
+flags.DEFINE_integer(
+    "n",
+    26,
+    "Number of circles.",
+)
+flags.DEFINE_integer(
+    "seed",
+    42,
+    "RNG seed.",
+)
+flags.DEFINE_integer(
+    "num_iterations",
+    10,
+    "Number of iterations.",
+)
+flags.DEFINE_string(
+    "png_filename",
+    "",
+    "PNG filename to save plot to.",
+)
+FLAGS = flags.FLAGS
+
+
+
 
 
 class CirclePacking:
@@ -165,13 +196,11 @@ class CirclePacking:
         print(f"\nPlot saved to '{filename}'")
 
 
-# ── Entry point ──────────────────────────────────────────────────────────────
-if __name__ == "__main__":
-    import sys
-
-    n              = int(sys.argv[1]) if len(sys.argv) > 1 else 10
-    seed           = int(sys.argv[2]) if len(sys.argv) > 2 else 42
-    num_iterations = int(sys.argv[3]) if len(sys.argv) > 3 else None
+def main(argv):
+    n = int(FLAGS.n)
+    seed = int(FLAGS.seed)
+    num_iterations = int(FLAGS.num_iterations)
+    png_filename = FLAGS.png_filename
 
     if num_iterations is None:
         # Single run
@@ -194,10 +223,17 @@ if __name__ == "__main__":
                 best_sum     = s
                 best_packing = packing
                 best_seed    = current_seed
-            print(f"Iteration {iteration + 1:{width}}/{num_iterations}  "
-                  f"seed={current_seed:6d}  sum={s:.6f}"
-                  + ("  *** best ***" if is_best else ""))
+            # print(f"Iteration {iteration + 1:{width}}/{num_iterations}  "
+            #       f"seed={current_seed:6d}  sum={s:.6f}"
+            #       + ("  *** best ***" if is_best else ""))
 
         print(f"\nBest seed: {best_seed}  |  Best sum of radii: {best_sum:.6f}")
-        best_packing.print_results()
-        best_packing.plot("result.png")
+        if png_filename:
+            best_packing.print_results()
+            best_packing.plot(png_filename)
+
+
+
+# ── Entry point ──────────────────────────────────────────────────────────────
+if __name__ == "__main__":
+    app.run(main)
