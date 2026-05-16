@@ -296,7 +296,7 @@ class CirclePacker(nn.Module):
     @staticmethod
     def _radii_to_raw(radii: torch.Tensor) -> torch.Tensor:
         """Inverse of softplus: raw = log(exp(r) - 1)."""
-        return torch.log(torch.expm1(radii.clamp(min=1e-6)))
+        return torch.log(torch.expm1(radii.clamp(min=1e-4)))
 
     @property
     def centers(self) -> torch.Tensor:
@@ -360,23 +360,35 @@ class CirclePacker(nn.Module):
 
             # x = 0  wall: overlap when cx[i] < ri
             dist_x0 = cx[i]
-            total = total + torch.where(dist_x0 < ri,
-                                        _circle_wall_overlap(ri, dist_x0), zero)
+            total = total + torch.where(
+            	dist_x0 < ri,
+            	_circle_wall_overlap(ri, dist_x0),
+            	zero,
+            )
 
             # x = 1  wall: overlap when (1 - cx[i]) < ri
             dist_x1 = 1.0 - cx[i]
-            total = total + torch.where(dist_x1 < ri,
-                                        _circle_wall_overlap(ri, dist_x1), zero)
+            total = total + torch.where(
+            	dist_x1 < ri,
+            	_circle_wall_overlap(ri, dist_x1),
+            	zero,
+            )
 
             # y = 0  wall: overlap when cy[i] < ri
             dist_y0 = cy[i]
-            total = total + torch.where(dist_y0 < ri,
-                                        _circle_wall_overlap(ri, dist_y0), zero)
+            total = total + torch.where(
+            	dist_y0 < ri,
+            	_circle_wall_overlap(ri, dist_y0), 
+            	zero,
+            )
 
             # y = 1  wall: overlap when (1 - cy[i]) < ri
             dist_y1 = 1.0 - cy[i]
-            total = total + torch.where(dist_y1 < ri,
-                                        _circle_wall_overlap(ri, dist_y1), zero)
+            total = total + torch.where(
+            	dist_y1 < ri, 
+            	_circle_wall_overlap(ri, dist_y1),
+            	zero,
+            )
 
         return total
 
@@ -467,11 +479,17 @@ def optimize(n: Optional[int] = None,
     loss_curve = []
 
     for step in range(1, n_steps + 1):
+        # print(f"\t{model.raw_centers.detach().cpu()=}", end=", ")
+        # print(f"{model.raw_radii.detach().cpu()=}", end="  --> ")
         optimizer.zero_grad()
         loss, penalty = model()
         loss.backward()
         optimizer.step()
         loss_curve.append(loss.item())
+        # print(f"\t{model.raw_centers.detach().cpu()}", end=", ")
+        # print(f"{model.raw_radii.detach().cpu()}")
+        if torch.isnan(loss):
+            raise ValueError("NaN loss detected, terminating training.")
 
         if log_every and step % log_every == 0:
             radii   = model.radii.detach()
@@ -547,7 +565,7 @@ def main(argv):
         default_init_radius=initial_radius,
         penalty_weight=100.0,                # TO-DO: Expose these as flags
         learn_centers=True,                  # Set to False to freeze the centers
-        n_steps=10000,
+        n_steps=20000,
         lr=1.0e-3,
         log_every=500,
         device=torch.device("cpu"),          # Set to "mps" for Apple GPU
