@@ -565,8 +565,8 @@ def main(argv):
         default_init_radius=initial_radius,
         penalty_weight=100.0,                # TO-DO: Expose these as flags
         learn_centers=True,                  # Set to False to freeze the centers
-        n_steps=20000,
-        lr=1.0e-3,
+        n_steps=40000,
+        lr=2.5e-4,
         log_every=500,
         device=torch.device("cpu"),          # Set to "mps" for Apple GPU
     )
