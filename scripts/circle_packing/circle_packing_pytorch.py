@@ -266,6 +266,7 @@ class CirclePacker(nn.Module):
             # Sample uniformly in (0.1, 0.9) then convert to raw logits
             uniform = torch.empty(n, 2).uniform_(0.1, 0.9)
             raw_c = self._centers_to_raw(uniform)
+        self.initial_centers = torch.sigmoid(raw_c).detach()
 
         if learn_centers:
             self.raw_centers = nn.Parameter(raw_c)
@@ -392,7 +393,7 @@ class CirclePacker(nn.Module):
         """
         sum_r   = self.radii.sum()
         penalty = self.circle_circle_penalty() + self.circle_boundary_penalty()
-        return -sum_r + self.penalty_weight * penalty
+        return -sum_r + self.penalty_weight * penalty, penalty
 
 
 # ---------------------------------------------------------------------------
@@ -462,22 +463,31 @@ def optimize(n: Optional[int] = None,
     ).to(device)
 
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+    # optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.0)
     loss_curve = []
 
     for step in range(1, n_steps + 1):
         optimizer.zero_grad()
-        loss = model()
+        loss, penalty = model()
         loss.backward()
         optimizer.step()
         loss_curve.append(loss.item())
 
         if log_every and step % log_every == 0:
             radii   = model.radii.detach()
+            sum_radii = radii.sum().item()
+            penalty = penalty.detach().item()
+
+            # Compute the change in centers:
+            initial_centers = model.initial_centers.detach()
             centers = model.centers.detach()
+            # print(f"\n{initial_centers.cpu().numpy()=}\n{centers.cpu().numpy()=}\n")
+            delta_centers = torch.linalg.norm(initial_centers - centers).item()
+
             print(
             	f"\tStep {step:6d} | loss={loss.item():+.6f} | "
-                f"sum_r={radii.sum().item():.6f} | "
-                f"penalty={(radii.sum().item() + loss.item()):.6f}"
+                f"sum_r={sum_radii:.6f} | penalty={penalty:.6f} | "
+                f"δ centers={delta_centers:.6f}"
                 # f"radii={radii.cpu().numpy().round(4)} | "
                 # f"centers=\n{centers.cpu().numpy().round(4)}"
            	)
@@ -536,16 +546,18 @@ def main(argv):
         init_centers=centers,
         default_init_radius=initial_radius,
         penalty_weight=100.0,                # TO-DO: Expose these as flags
-        learn_centers=True,
+        learn_centers=True,                  # Set to False to freeze the centers
         n_steps=10000,
         lr=1.0e-3,
         log_every=500,
         device=torch.device("mps"),          # Apple GPU
     )
+    # print(result["loss_curve"])
 
     # Display results:
     print("\nFinal radii :", result["radii"].cpu().numpy().round(6))
-    print("Sum of radii:", round(result["sum_radii"], 6))
+    print("Final Centers :", result["centers"].cpu().numpy().round(6))
+    print("\nSum of radii:", round(result["sum_radii"], 6))
     plot(
         n, 
         result["centers"].cpu().tolist(),
