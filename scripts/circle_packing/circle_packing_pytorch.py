@@ -175,28 +175,26 @@ def _circle_circle_overlap(r1: torch.Tensor, r2: torch.Tensor,
     Intersection area of two circles with radii r1, r2 and center distance d.
 
     Formula (lens area):
-        A = r1² · arccos((d² + r1² - r2²) / (2·d·r1))
-          + r2² · arccos((d² + r2² - r1²) / (2·d·r2))
-          - ½ · sqrt((−d+r1+r2)(d−r1+r2)(d+r1−r2)(d+r1+r2))
+        A = r1^2 * arccos((d^2 + r1^2 - r2^2) / (2*d*r1))
+          + r2^2 * arccos((d^2 + r2^2 - r1^2) / (2*d*r2))
+          - 0.5 * sqrt((-d+r1+r2)(d-r1+r2)(d+r1-r2)(d+r1+r2))
 
-    Only called when d < r1 + r2  (circles actually overlap).
+    Only contributes when d < r1 + r2.
     """
     eps = 1e-8
 
     arg1 = (d * d + r1 * r1 - r2 * r2) / (2.0 * d * r1 + eps)
     arg2 = (d * d + r2 * r2 - r1 * r1) / (2.0 * d * r2 + eps)
 
-    # Clamp to [-1, 1] to keep arccos numerically safe
     arg1 = arg1.clamp(-1.0 + eps, 1.0 - eps)
     arg2 = arg2.clamp(-1.0 + eps, 1.0 - eps)
 
     term1 = r1 * r1 * torch.acos(arg1)
     term2 = r2 * r2 * torch.acos(arg2)
 
-    # Radicand: (−d+r1+r2)(d−r1+r2)(d+r1−r2)(d+r1+r2)
     radicand = ((-d + r1 + r2) * (d - r1 + r2) *
                 (d + r1 - r2) * (d + r1 + r2))
-    radicand = radicand.clamp(min=0.0)          # numerical guard
+    radicand = radicand.clamp(min=0.0)
     term3 = 0.5 * torch.sqrt(radicand)
 
     return term1 + term2 - term3
@@ -204,11 +202,11 @@ def _circle_circle_overlap(r1: torch.Tensor, r2: torch.Tensor,
 
 def _circle_wall_overlap(r: torch.Tensor, dist: torch.Tensor) -> torch.Tensor:
     """
-    Area of a circle of radius r that crosses a straight wall at distance
-    `dist` from the center (dist < r required for there to be overlap).
+    Area of a circle of radius r whose center is at distance `dist` from a
+    straight wall (dist < r for there to be overlap).
 
     Formula (circular segment):
-        A = r² · arccos(dist / r) − dist · sqrt(r² − dist²)
+        A = r^2 * arccos(dist / r) - dist * sqrt(r^2 - dist^2)
     """
     eps = 1e-8
     arg = (dist / r).clamp(-1.0 + eps, 1.0 - eps)
