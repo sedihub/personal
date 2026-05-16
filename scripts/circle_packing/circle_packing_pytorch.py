@@ -536,7 +536,7 @@ def main(argv):
         init_centers=centers,
         default_init_radius=initial_radius,
         penalty_weight=100.0,                # TO-DO: Expose these as flags
-        learn_centers=False,
+        learn_centers=True,
         n_steps=10000,
         lr=1.0e-3,
         log_every=500,
@@ -544,12 +544,12 @@ def main(argv):
     )
 
     # Display results:
-    print("\nFinal radii :", result["radii"].numpy().round(6))
+    print("\nFinal radii :", result["radii"].cpu().numpy().round(6))
     print("Sum of radii:", round(result["sum_radii"], 6))
     plot(
         n, 
-        centers.tolist(),
-        max_radius=result["radii"].tolist(),
+        result["centers"].cpu().tolist(),
+        max_radius=result["radii"].cpu().tolist(),
         filename=png_filename.replace(".png", "_final.png"),
     )
 
