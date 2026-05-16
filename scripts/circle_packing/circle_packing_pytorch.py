@@ -475,8 +475,9 @@ def optimize(n: Optional[int] = None,
             radii   = model.radii.detach()
             centers = model.centers.detach()
             print(
-            	f"\tStep {step:5d} | loss={loss.item():+.6f} | "
+            	f"\tStep {step:6d} | loss={loss.item():+.6f} | "
                 f"sum_r={radii.sum().item():.6f} | "
+                f"penalty={(radii.sum().item() + loss.item()):.6f}"
                 # f"radii={radii.cpu().numpy().round(4)} | "
                 # f"centers=\n{centers.cpu().numpy().round(4)}"
            	)
@@ -518,7 +519,7 @@ def main(argv):
     centers = torch.tensor(
         list(generate_points(n, max_margin_param).values())
     )
-    print(centers)
+    print(f"{centers=}")
 
     plot(
         n, 
@@ -534,12 +535,12 @@ def main(argv):
     result = optimize(
         init_centers=centers,
         default_init_radius=initial_radius,
-        penalty_weight=100.0,  # TO-DO: Expose these as flags
+        penalty_weight=100.0,                # TO-DO: Expose these as flags
         learn_centers=False,
         n_steps=10000,
         lr=1.0e-3,
         log_every=500,
-        device=torch.device("mps"), # Apple GPU
+        device=torch.device("mps"),          # Apple GPU
     )
 
     # Display results:
