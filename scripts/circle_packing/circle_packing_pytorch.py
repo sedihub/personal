@@ -550,7 +550,7 @@ def main(argv):
         n_steps=10000,
         lr=1.0e-3,
         log_every=500,
-        device=torch.device("mps"),          # Apple GPU
+        device=torch.device("cpu"),          # Set to "mps" for Apple GPU
     )
     # print(result["loss_curve"])
 
