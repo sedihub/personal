@@ -1,26 +1,8 @@
 """
-Learn radii
-"""
-
-"""
 circle_packing.py
 -----------------
 Maximize the sum of radii of n circles with fixed centers inside a unit square,
 penalizing circle–circle overlap and circle–boundary overlap.
-
-Usage example
--------------
-    import torch
-    from circle_packing import CirclePacker, optimize
-
-    centers = torch.tensor([[0.25, 0.25],
-                             [0.75, 0.25],
-                             [0.50, 0.75]])
-
-    result = optimize(centers, n_steps=2000, lr=1e-2)
-    print("Optimal radii:", result["radii"])
-    print("Sum of radii: ", result["sum_radii"])
-
 
 CLI
 ------------
