@@ -412,8 +412,6 @@ def optimize(
 
     # For debug only!
     jax.debug.print("[JAX DEBUG] Initial Parameters: {params}", params=params)
-    # jax.debug.print("[JAX DEBUG] Value of raw_r: {}", raw_r)
-    # jax.debug.print("[JAX DEBUG] Value of raw_c: {}", raw_c)
 
     use_newton = optimizer_name.lower() == "newton"
 
@@ -437,13 +435,19 @@ def optimize(
             (loss, penalty), grads = jax.value_and_grad(loss_fn, has_aux=True)(
                 params, penalty_weight
             )
+
+            # For debuging only!
+            jax.debug.print("\n[JAX DEBUG] Loss: {loss}", loss=loss)
+            jax.debug.print("[JAX DEBUG] Penalty: {penalty}", penalty=penalty)
+            jax.debug.print("[JAX DEBUG] Gradients: {grads}\n", grads=grads)
+
             updates, new_opt_state = optimizer.update(grads, opt_state, params)
             new_params = optax.apply_updates(params, updates)
 
             # For debuging only!
             jax.debug.print("[JAX DEBUG] Optimizer State: {state}", state=opt_state)
             jax.debug.print("[JAX DEBUG] Optimizer Updates: {updates}", updates=updates)
-            
+
             return new_params, new_opt_state, loss, penalty
 
     # ------------------------------------------------------------------
