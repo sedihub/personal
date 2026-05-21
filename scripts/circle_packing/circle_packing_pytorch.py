@@ -13,7 +13,7 @@ python3 ./circle_packing_pytorch.py \
   --initial_radius=0.01 \
   --max_margin_param=2.0
 """
-
+3
 
 from absl import flags
 from absl import app
@@ -472,9 +472,14 @@ def optimize(n: Optional[int] = None,
         loss_curve.append(loss.item())
         # print(f"\t{model.raw_centers.detach().cpu()}", end=", ")
         # print(f"{model.raw_radii.detach().cpu()}")
-        if torch.isnan(loss) or \
-           torch.isnan(model.radii).any().item() or \
-           torch.isnan(model.centers).any().item():
+        if (
+            torch.isnan(loss) or 
+            torch.isnan(model.radii).any().item() or 
+            torch.isnan(model.centers).any().item()
+        ):
+            print(f"loss={loss.item():+.6f} | penalty={penalty.item():+.6f}")
+            print(f"model.radii={model.radii.cpu().numpy()}")
+            print(f"model.centers={model.centers.cpu().numpy()}")
             # print(_radii_np.size, _centers_np.tolist(), _radii_np.tolist())
             plot(
                 _radii_np.size, 
@@ -558,8 +563,8 @@ def main(argv):
         default_init_radius=initial_radius,
         penalty_weight=100.0,                # TO-DO: Expose these as flags
         learn_centers=True,                  # Set to False to freeze the centers
-        n_steps=20000,
-        lr=1.0e-4,
+        n_steps=10000,
+        lr=1.0e-3,
         log_every=500,
         device=torch.device("cpu"),          # Set to "mps" for Apple GPU
     )
