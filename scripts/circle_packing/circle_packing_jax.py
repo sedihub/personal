@@ -13,7 +13,7 @@ python3 ./circle_packing_jax.py \
   --initial_radius=0.01 \
   --max_margin_param=2.0 \
   --optimizer=adam \
-  --lr=1e-4 \
+  --lr=1e-3 \
   --newton_alpha=1.0 \
   --newton_damping=1e-4
 
@@ -22,6 +22,7 @@ Supported optimizers: adam | adamw | sgd | newton
 
 from absl import flags
 from absl import app
+from absl import logging
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 import math
@@ -29,7 +30,12 @@ import random
 import jax
 import jax.numpy as jnp
 import optax
+import sys
 from typing import Optional
+
+
+# # Comment out after debugging:
+# jax.config.update('jax_disable_jit', True)
 
 
 flags.DEFINE_integer("n", 26, "Number of circles.")
@@ -170,7 +176,7 @@ def raw_to_radii(raw_radii: jnp.ndarray) -> jnp.ndarray:
 
 def _circle_circle_overlap(r1, r2, d):
     """Intersection area (lens) of two circles with radii r1, r2, separation d."""
-    eps = 1e-8
+    eps = 1e-6
     arg1 = jnp.clip((d*d + r1*r1 - r2*r2) / (2.0*d*r1 + eps), -1.0+eps, 1.0-eps)
     arg2 = jnp.clip((d*d + r2*r2 - r1*r1) / (2.0*d*r2 + eps), -1.0+eps, 1.0-eps)
     term1 = r1*r1 * jnp.arccos(arg1)
@@ -182,7 +188,7 @@ def _circle_circle_overlap(r1, r2, d):
 
 def _circle_wall_overlap(r, dist):
     """Area of circular segment cut off by a wall at distance `dist` from center."""
-    eps = 1e-8
+    eps = 1e-6
     arg = jnp.clip(dist / r, -1.0+eps, 1.0-eps)
     return r*r * jnp.arccos(arg) - dist * jnp.sqrt(jnp.clip(r*r - dist*dist, 0.0))
 
@@ -404,6 +410,11 @@ def optimize(
     initial_centers = raw_to_centers(raw_c)
     params = {"raw_centers": raw_c, "raw_radii": raw_r}
 
+    # For debug only!
+    jax.debug.print("[JAX DEBUG] Initial Parameters: {params}", params=params)
+    # jax.debug.print("[JAX DEBUG] Value of raw_r: {}", raw_r)
+    # jax.debug.print("[JAX DEBUG] Value of raw_c: {}", raw_c)
+
     use_newton = optimizer_name.lower() == "newton"
 
     # ------------------------------------------------------------------
@@ -419,6 +430,7 @@ def optimize(
             )
 
         opt_state = optimizer.init(params)
+        jax.debug.print("[JAX DEBUG] Initial Optimizer State: {state}", state=opt_state)
 
         @jax.jit
         def first_order_step(params, opt_state):
@@ -427,6 +439,11 @@ def optimize(
             )
             updates, new_opt_state = optimizer.update(grads, opt_state, params)
             new_params = optax.apply_updates(params, updates)
+
+            # For debuging only!
+            jax.debug.print("[JAX DEBUG] Optimizer State: {state}", state=opt_state)
+            jax.debug.print("[JAX DEBUG] Optimizer Updates: {updates}", updates=updates)
+            
             return new_params, new_opt_state, loss, penalty
 
     # ------------------------------------------------------------------
@@ -468,8 +485,15 @@ def optimize(
             or jnp.any(jnp.isnan(raw_to_radii(params["raw_radii"])))
             or jnp.any(jnp.isnan(raw_to_centers(params["raw_centers"])))
         ):
-            centers_np = raw_to_centers(prev_params["raw_centers"])
-            radii_np   = raw_to_radii(prev_params["raw_radii"])
+            centers_np = raw_to_centers(params["raw_centers"])
+            radii_np   = raw_to_radii(params["raw_radii"])
+            print(f"{loss=}")
+            print(f"{radii_np=}")
+            print(f"{centers_np=}\n")
+            prev_centers_np = raw_to_centers(prev_params["raw_centers"])
+            prev_radii_np   = raw_to_radii(prev_params["raw_radii"])
+            print(f"{prev_radii_np=}")
+            print(f"{prev_centers_np=}")
             plot(
                 int(radii_np.shape[0]),
                 centers_np.tolist(),
@@ -537,10 +561,10 @@ def main(argv):
     print(f"Circle packing optimisation – unit square, n={n}")
     print(f"Optimizer : {optimizer_name.upper()}")
     if optimizer_name.lower() == "newton":
-        print(f"  alpha   : {newton_alpha}")
-        print(f"  damping : {newton_damping}")
+        print(f"\talpha   : {newton_alpha}")
+        print(f"\tdamping : {newton_damping}")
     else:
-        print(f"  lr      : {lr}")
+        print(f"\tlr      : {lr}")
     print("=" * 60)
 
     result = optimize(
@@ -570,4 +594,9 @@ def main(argv):
 
 
 if __name__ == "__main__":
-    app.run(main)
+    try:
+        app.run(main)
+    except Exception:
+        # exc_info=True forces the full traceback to print to stderr
+        logging.exception("Program terminated with an error:", exc_info=True)
+        sys.exit(1)
