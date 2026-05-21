@@ -478,8 +478,8 @@ def optimize(n: Optional[int] = None,
             torch.isnan(model.centers).any().item()
         ):
             print(f"loss={loss.item():+.6f} | penalty={penalty.item():+.6f}")
-            print(f"model.radii={model.radii.cpu().numpy()}")
-            print(f"model.centers={model.centers.cpu().numpy()}")
+            print(f"model.radii={model.radii.cpu().detach().numpy()}")
+            print(f"model.centers={model.centers.cpu().detach().numpy()}")
             # print(_radii_np.size, _centers_np.tolist(), _radii_np.tolist())
             plot(
                 _radii_np.size, 
