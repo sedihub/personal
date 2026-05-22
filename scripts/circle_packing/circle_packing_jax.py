@@ -428,7 +428,7 @@ def optimize(
             )
 
         opt_state = optimizer.init(params)
-        jax.debug.print("[JAX DEBUG] Initial Optimizer State: {state}", state=opt_state)
+        # jax.debug.print("[JAX DEBUG] Initial Optimizer State: {state}", state=opt_state)
 
         @jax.jit
         def first_order_step(params, opt_state):
@@ -444,9 +444,9 @@ def optimize(
             updates, new_opt_state = optimizer.update(grads, opt_state, params)
             new_params = optax.apply_updates(params, updates)
 
-            # For debuging only!
-            jax.debug.print("[JAX DEBUG] Optimizer State: {state}", state=opt_state)
-            jax.debug.print("[JAX DEBUG] Optimizer Updates: {updates}", updates=updates)
+            # # For debuging only!
+            # jax.debug.print("[JAX DEBUG] Optimizer State: {state}", state=opt_state)
+            # jax.debug.print("[JAX DEBUG] Optimizer Updates: {updates}", updates=updates)
 
             return new_params, new_opt_state, loss, penalty
 
