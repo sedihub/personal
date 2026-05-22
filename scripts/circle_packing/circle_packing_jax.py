@@ -62,9 +62,10 @@ flags.DEFINE_float(
 )
 flags.DEFINE_float(
     "newton_damping",
-    1e-4,
+    1.0,
     "Tikhonov damping added to the diagonal of H before inversion: "
-    "H_reg = H + damping * I.  Improves stability when H is near-singular.",
+    "H_reg = H + damping * I.  Improves stability when H is near-singular. "
+    "Recommended range: 0.1–10.0 when penalty_weight=100.",
 )
 FLAGS = flags.FLAGS
 
@@ -156,8 +157,12 @@ def centers_to_raw(centers: jnp.ndarray) -> jnp.ndarray:
 
 
 def radii_to_raw(radii: jnp.ndarray) -> jnp.ndarray:
-    """Inverse of softplus: raw = log(exp(r) - 1)."""
-    return jnp.log(jnp.expm1(jnp.clip(radii, 1e-4, None)))
+    """Inverse of softplus: raw = log(exp(r) - 1).
+
+    Fix: clip the expm1 result away from zero before taking log to prevent
+    log(0) = -inf when radii are very small.
+    """
+    return jnp.log(jnp.clip(jnp.expm1(jnp.clip(radii, 1e-4, None)), 1e-10, None))
 
 
 def raw_to_centers(raw_centers: jnp.ndarray) -> jnp.ndarray:
@@ -171,26 +176,75 @@ def raw_to_radii(raw_radii: jnp.ndarray) -> jnp.ndarray:
 
 
 # ---------------------------------------------------------------------------
-# Overlap area helpers  (pure JAX, fully differentiable)
+# Overlap area helpers  (pure JAX, NaN-safe gradients)
 # ---------------------------------------------------------------------------
 
-def _circle_circle_overlap(r1, r2, d):
-    """Intersection area (lens) of two circles with radii r1, r2, separation d."""
+def _circle_circle_overlap(r1, r2, d_raw):
+    """Intersection area (lens area) of two circles with radii r1, r2.
+
+    NaN-safety strategy
+    -------------------
+    JAX traces *both* branches of every jnp.where before applying the mask,
+    so a NaN or Inf produced in a "logically dead" branch (e.g. d == 0 on
+    the diagonal, or dist == r at the wall) still poisons the gradient.
+
+    There are three dangerous sites in this function:
+
+    1. Division by d (or d*r1, d*r2) when d == 0 (coincident centers).
+       Fix: clamp d to d_safe = max(d, eps) before any division.
+       The diagonal / same-circle entries are excluded by the upper-triangular
+       mask in circle_circle_penalty, so the safe value never enters the result.
+
+    2. arccos(x) when |x| >= 1: gradient is -1/sqrt(1-x^2) -> ±Inf.
+       Fix: clip arccos arguments to [-1+eps, 1-eps].
+
+    3. sqrt(radicand) when radicand == 0: gradient is 1/(2*sqrt) -> Inf.
+       Fix: clamp radicand to a small positive floor eps^2 so the gradient
+       of sqrt stays bounded.  The forward value at the floor is tiny
+       (O(eps)), which is negligible compared to the other terms.
+    """
     eps = 1e-6
-    arg1 = jnp.clip((d*d + r1*r1 - r2*r2) / (2.0*d*r1 + eps), -1.0+eps, 1.0-eps)
-    arg2 = jnp.clip((d*d + r2*r2 - r1*r1) / (2.0*d*r2 + eps), -1.0+eps, 1.0-eps)
+    # (1) Safe distance: avoids 0/0 in arccos arguments and denominators.
+    d = jnp.maximum(d_raw, eps)
+
+    arg1 = jnp.clip((d*d + r1*r1 - r2*r2) / (2.0*d*r1), -1.0 + eps, 1.0 - eps)
+    arg2 = jnp.clip((d*d + r2*r2 - r1*r1) / (2.0*d*r2), -1.0 + eps, 1.0 - eps)
+
     term1 = r1*r1 * jnp.arccos(arg1)
     term2 = r2*r2 * jnp.arccos(arg2)
-    radicand = jnp.clip((-d+r1+r2)*(d-r1+r2)*(d+r1-r2)*(d+r1+r2), 0.0)
-    term3 = 0.5 * jnp.sqrt(radicand)
+
+    # (3) Clamp radicand away from 0 so sqrt gradient is finite.
+    radicand = (-d + r1 + r2) * (d - r1 + r2) * (d + r1 - r2) * (d + r1 + r2)
+    term3 = 0.5 * jnp.sqrt(jnp.maximum(radicand, eps * eps))
+
     return term1 + term2 - term3
 
 
-def _circle_wall_overlap(r, dist):
-    """Area of circular segment cut off by a wall at distance `dist` from center."""
+def _circle_wall_overlap(r, dist_raw):
+    """Area of circular segment cut off by a wall at distance dist from center.
+
+    NaN-safety strategy
+    -------------------
+    Two dangerous sites:
+
+    4. arccos(dist/r) when dist >= r: argument >= 1, gradient -> -Inf.
+       Fix: clamp dist to dist_safe = min(dist, r - eps) before division.
+       The outer jnp.where in circle_boundary_penalty zeros the result
+       whenever dist >= r, so the safe substitution only affects the dead
+       branch and never changes the real answer.
+
+    5. sqrt(r^2 - dist^2) when dist -> r: value -> 0, gradient -> Inf.
+       Fix: clamp the radicand to at least eps^2.
+    """
     eps = 1e-6
-    arg = jnp.clip(dist / r, -1.0+eps, 1.0-eps)
-    return r*r * jnp.arccos(arg) - dist * jnp.sqrt(jnp.clip(r*r - dist*dist, 0.0))
+    # (4) Safe distance: keeps arccos argument strictly inside (-1, 1).
+    dist = jnp.minimum(dist_raw, r - eps)
+
+    arg        = jnp.clip(dist / r, -1.0 + eps, 1.0 - eps)
+    # (5) Clamp radicand away from 0 so sqrt gradient is finite.
+    under_sqrt = jnp.maximum(r*r - dist*dist, eps * eps)
+
+    return r*r * jnp.arccos(arg) - dist * jnp.sqrt(under_sqrt)
 
 
 # ---------------------------------------------------------------------------
@@ -198,28 +252,44 @@ def _circle_wall_overlap(r, dist):
 # ---------------------------------------------------------------------------
 
 def circle_circle_penalty(centers: jnp.ndarray, radii: jnp.ndarray) -> jnp.ndarray:
-    """Total pairwise circle-circle overlap area (vectorised over all pairs)."""
-    diff = centers[:, None, :] - centers[None, :, :]       # (n, n, 2)
-    d    = jnp.sqrt(jnp.sum(diff**2, axis=-1) + 1e-16)    # (n, n)
+    """Total pairwise circle-circle overlap area (vectorised, NaN-safe).
+
+    The pairwise distance d is computed as sqrt(||diff||^2 + eps) rather than
+    sqrt(||diff||^2).  This keeps the gradient of d w.r.t. centers finite
+    even when two centers coincide (d == 0 -> gradient would be 0/0 = NaN
+    without the eps).  The error introduced is O(sqrt(eps)) ~ 1e-6, which
+    is negligible relative to the circle geometry.
+    """
+    diff = centers[:, None, :] - centers[None, :, :]           # (n, n, 2)
+    d    = jnp.sqrt(jnp.sum(diff**2, axis=-1) + 1e-12)        # (n, n) — eps inside sqrt
+
     ri, rj = radii[:, None], radii[None, :]
-    overlap    = _circle_circle_overlap(ri, rj, d)
+    overlap     = _circle_circle_overlap(ri, rj, d)
     overlapping = d < (ri + rj)
-    n = radii.shape[0]
-    upper = jnp.triu(jnp.ones((n, n), dtype=bool), k=1)
+    n_circles   = radii.shape[0]
+    upper       = jnp.triu(jnp.ones((n_circles, n_circles), dtype=bool), k=1)
+
     return jnp.sum(jnp.where(overlapping & upper, overlap, 0.0))
 
 
 def circle_boundary_penalty(centers: jnp.ndarray, radii: jnp.ndarray) -> jnp.ndarray:
-    """Total circle-boundary overlap area for all four walls."""
+    """Total circle-boundary overlap area for all four walls (NaN-safe).
+
+    Safe because _circle_wall_overlap clamps dist to min(dist, r-eps) and
+    the radicand to eps^2, so the formula is finite even in the masked
+    (no-overlap) branch that jnp.where still eagerly evaluates.
+    """
     cx, cy = centers[:, 0], centers[:, 1]
-    zero = jnp.zeros_like(radii)
 
     def wall_contrib(dist):
-        return jnp.where(dist < radii, _circle_wall_overlap(radii, dist), zero)
+        overlap = _circle_wall_overlap(radii, dist)          # always finite
+        return jnp.where(dist < radii, overlap, 0.0)
 
     return (
-        wall_contrib(cx) + wall_contrib(1.0 - cx) +
-        wall_contrib(cy) + wall_contrib(1.0 - cy)
+        wall_contrib(cx)       +   # x = 0 wall
+        wall_contrib(1.0 - cx) +   # x = 1 wall
+        wall_contrib(cy)       +   # y = 0 wall
+        wall_contrib(1.0 - cy)     # y = 1 wall
     ).sum()
 
 
@@ -236,7 +306,8 @@ def loss_fn(params: dict, penalty_weight: float = 1.0):
     centers = raw_to_centers(params["raw_centers"])
     radii   = raw_to_radii(params["raw_radii"])
     sum_r   = radii.sum()
-    penalty = circle_circle_penalty(centers, radii) + circle_boundary_penalty(centers, radii)
+    penalty = (circle_circle_penalty(centers, radii) +
+               circle_boundary_penalty(centers, radii))
     return -sum_r + penalty_weight * penalty, penalty
 
 
@@ -245,13 +316,7 @@ def loss_fn(params: dict, penalty_weight: float = 1.0):
 # ---------------------------------------------------------------------------
 
 def make_optax_optimizer(name: str, lr: float) -> optax.GradientTransformation:
-    """
-    Return an optax GradientTransformation for the given name.
-
-    Supported names: "adam", "adamw", "sgd".
-    The Newton optimizer is handled separately and does not go through this
-    factory.
-    """
+    """Return an optax GradientTransformation for adam / adamw / sgd."""
     name = name.lower()
     if name == "adam":
         return optax.adam(lr)
@@ -278,7 +343,7 @@ def _flatten_params(params: dict) -> jnp.ndarray:
 
 
 def _unflatten_params(flat: jnp.ndarray, ref: dict) -> dict:
-    """Reconstruct a parameter dict from a flat 1-D vector, using ref for shapes."""
+    """Reconstruct a parameter dict from a flat vector using ref for shapes."""
     nc = ref["raw_centers"].size
     return {
         "raw_centers": flat[:nc].reshape(ref["raw_centers"].shape),
@@ -295,50 +360,45 @@ def newton_step(
     """
     One damped Newton step using the exact Hessian.
 
-    The update rule is:
-
+    Update rule:
         p  ←  p  -  alpha * (H + damping * I)^{-1}  g
 
-    where g is the gradient vector and H is the full Hessian matrix, both
-    computed via JAX's forward-over-reverse autodiff (jax.hessian).
+    where g = ∇loss  and  H = ∇²loss  are computed via JAX autodiff.
 
-    Parameters
-    ----------
-    params        : dict with 'raw_centers' and 'raw_radii'
-    penalty_weight: passed through to loss_fn
-    alpha         : step-size multiplier (analogous to learning rate)
-    damping       : Tikhonov regularisation on H for numerical stability
-
-    Returns
-    -------
-    new_params : updated parameter dict
-    loss       : scalar loss before the step
-    penalty    : auxiliary penalty scalar before the step
+    Stability notes
+    ---------------
+    * The loss is NaN-free (see overlap helpers above), so g and H are also
+      NaN-free.
+    * `damping` regularises H against near-singularity.  Because the penalty
+      weight is 100, the Hessian entries are O(100); damping should be in the
+      same ballpark (default 1.0 rather than the previous 1e-4).
+    * `jnp.linalg.solve` is used instead of explicit inversion.
+    * The solved delta is clipped to [-max_delta, max_delta] per parameter to
+      prevent a single Newton step from jumping across the entire parameter
+      space when the Hessian is still poorly conditioned early in training.
     """
-    # Work in a flat parameter space so the Hessian is a 2-D matrix.
     flat = _flatten_params(params)
     p    = flat.shape[0]
 
     def scalar_loss(flat_p: jnp.ndarray) -> jnp.ndarray:
-        """Loss as a function of the flat parameter vector (aux dropped)."""
-        p_dict = _unflatten_params(flat_p, params)
-        return loss_fn(p_dict, penalty_weight)[0]
+        return loss_fn(_unflatten_params(flat_p, params), penalty_weight)[0]
 
     # Gradient and Hessian via JAX autodiff.
     # jax.hessian uses forward-over-reverse, giving an exact p×p matrix.
     g = jax.grad(scalar_loss)(flat)             # (p,)
     H = jax.hessian(scalar_loss)(flat)          # (p, p)
 
-    # Tikhonov damping: H_reg = H + damping * I
-    H_reg = H + damping * jnp.eye(p)
+    H_reg = H + damping * jnp.eye(p)                   # Tikhonov damping
+    delta = jnp.linalg.solve(H_reg, g)                 # (p,)
 
-    # Solve H_reg @ delta = g  (more numerically stable than explicit inversion)
-    delta = jnp.linalg.solve(H_reg, g)          # (p,)
+    # Safeguard: cap each component so one step cannot move more than 1.0 in
+    # raw-parameter space (sigmoid/softplus map this to a bounded real change).
+    max_delta = 1.0
+    delta = jnp.clip(delta, -max_delta, max_delta)
 
     new_flat   = flat - alpha * delta
     new_params = _unflatten_params(new_flat, params)
 
-    # Recompute loss/penalty at the *original* params for logging consistency.
     loss, penalty = loss_fn(params, penalty_weight)
     return new_params, loss, penalty
 
@@ -358,7 +418,7 @@ def optimize(
     n_steps: int = 2000,
     lr: float = 1e-2,
     newton_alpha: float = 1.0,
-    newton_damping: float = 1e-4,
+    newton_damping: float = 1.0,
     log_every: int = 200,
 ) -> dict:
     """
@@ -371,21 +431,17 @@ def optimize(
     init_radii       : initial radii, shape (n,)
     default_init_radius : fallback radius when init_radii is None
     penalty_weight   : weight for the overlap penalty terms
-    learn_centers    : if False, centers are frozen and only radii are updated
-    optimizer_name   : one of "adam" | "adamw" | "sgd" | "newton"
+    learn_centers    : if False, centers are frozen (first-order only)
+    optimizer_name   : "adam" | "adamw" | "sgd" | "newton"
     n_steps          : number of optimisation steps
-    lr               : learning rate for first-order optimisers (adam/adamw/sgd)
-    newton_alpha     : step-size multiplier for Newton: p -= alpha * H^{-1} g
-    newton_damping   : Tikhonov damping for Newton's Hessian: H + damping * I
+    lr               : learning rate for adam / adamw / sgd
+    newton_alpha     : step-size multiplier for Newton
+    newton_damping   : Tikhonov damping for Newton Hessian (H + damping*I)
     log_every        : print progress every this many steps (0 = silent)
 
     Returns
     -------
-    dict with keys:
-        radii       - final radii (jnp.ndarray, shape (n,))
-        centers     - final centers (jnp.ndarray, shape (n, 2))
-        sum_radii   - scalar sum of radii (float)
-        loss_curve  - list of per-step loss values
+    dict with keys: radii, centers, sum_radii, loss_curve
     """
     # ------------------------------------------------------------------
     # Initialise raw parameters
@@ -397,8 +453,8 @@ def optimize(
     else:
         if n is None:
             raise ValueError("Provide either `n` or `init_centers`.")
-        key   = jax.random.PRNGKey(0)
-        unif  = jax.random.uniform(key, shape=(n, 2), minval=0.1, maxval=0.9)
+        key  = jax.random.PRNGKey(0)
+        unif = jax.random.uniform(key, shape=(n, 2), minval=0.1, maxval=0.9)
         raw_c = centers_to_raw(unif)
 
     raw_r = (
@@ -410,8 +466,8 @@ def optimize(
     initial_centers = raw_to_centers(raw_c)
     params = {"raw_centers": raw_c, "raw_radii": raw_r}
 
-    # For debug only!
-    jax.debug.print("[JAX DEBUG] Initial Parameters: {params}", params=params)
+    # # For debug only!
+    # jax.debug.print("[JAX DEBUG] Initial Parameters: {params}", params=params)
 
     use_newton = optimizer_name.lower() == "newton"
 
@@ -436,10 +492,10 @@ def optimize(
                 params, penalty_weight
             )
 
-            # For debuging only!
-            jax.debug.print("\n[JAX DEBUG] Loss: {loss}", loss=loss)
-            jax.debug.print("[JAX DEBUG] Penalty: {penalty}", penalty=penalty)
-            jax.debug.print("[JAX DEBUG] Gradients: {grads}\n", grads=grads)
+            # # For debuging only!
+            # jax.debug.print("\n[JAX DEBUG] Loss: {loss}", loss=loss)
+            # jax.debug.print("[JAX DEBUG] Penalty: {penalty}", penalty=penalty)
+            # jax.debug.print("[JAX DEBUG] Gradients: {grads}\n", grads=grads)
 
             updates, new_opt_state = optimizer.update(grads, opt_state, params)
             new_params = optax.apply_updates(params, updates)
@@ -459,9 +515,8 @@ def optimize(
     else:
         if not learn_centers:
             print(
-                "[Newton] learn_centers=False is not supported for the Newton "
-                "optimizer (centers would need a separate masked step). "
-                "Proceeding with learn_centers=True."
+                "[Newton] learn_centers=False is not supported; "
+                "proceeding with learn_centers=True."
             )
 
         @jax.jit
@@ -481,39 +536,43 @@ def optimize(
         else:
             params, opt_state, loss, penalty = first_order_step(params, opt_state)
 
-        loss_curve.append(float(loss))
+        loss_val = float(loss)
+        loss_curve.append(loss_val)
 
-        # NaN guard
+        # NaN guard — report which tensor went bad to aid debugging.
+        radii_now   = raw_to_radii(params["raw_radii"])
+        centers_now = raw_to_centers(params["raw_centers"])
         if (
-            jnp.isnan(loss)
-            or jnp.any(jnp.isnan(raw_to_radii(params["raw_radii"])))
-            or jnp.any(jnp.isnan(raw_to_centers(params["raw_centers"])))
+            math.isnan(loss_val)
+            or bool(jnp.any(jnp.isnan(radii_now)))
+            or bool(jnp.any(jnp.isnan(centers_now)))
         ):
-            centers_np = raw_to_centers(params["raw_centers"])
-            radii_np   = raw_to_radii(params["raw_radii"])
-            print(f"{loss=}")
-            print(f"{radii_np=}")
-            print(f"{centers_np=}\n")
-            prev_centers_np = raw_to_centers(prev_params["raw_centers"])
-            prev_radii_np   = raw_to_radii(prev_params["raw_radii"])
-            print(f"{prev_radii_np=}")
-            print(f"{prev_centers_np=}")
+            bad = []
+            if math.isnan(loss_val):                         bad.append("loss")
+            if bool(jnp.any(jnp.isnan(radii_now))):         bad.append("radii")
+            if bool(jnp.any(jnp.isnan(centers_now))):       bad.append("centers")
+            print(f"[NaN] step {i}, bad tensors: {bad}")
+
+            # Plot last good state.
+            prev_centers = raw_to_centers(prev_params["raw_centers"])
+            prev_radii   = raw_to_radii(prev_params["raw_radii"])
             plot(
-                int(radii_np.shape[0]),
-                centers_np.tolist(),
-                max_radius=radii_np.tolist(),
-                filename=FLAGS.png_filename.replace(".png", "_final.png"),
+                int(prev_radii.shape[0]),
+                prev_centers.tolist(),
+                max_radius=prev_radii.tolist(),
+                filename=FLAGS.png_filename.replace(".png", "_nan_checkpoint.png"),
             )
-            raise ValueError("NaN detected, terminating training.")
+            raise ValueError(
+                f"NaN detected at step {i} in: {bad}. "
+                "Last-good-state plot saved to *_nan_checkpoint.png."
+            )
 
         if log_every and i % log_every == 0:
-            radii   = raw_to_radii(params["raw_radii"])
-            centers = raw_to_centers(params["raw_centers"])
-            sum_r   = float(radii.sum())
-            pen     = float(penalty)
-            delta   = float(jnp.linalg.norm(initial_centers - centers))
+            sum_r = float(radii_now.sum())
+            pen   = float(penalty)
+            delta = float(jnp.linalg.norm(initial_centers - centers_now))
             print(
-                f"\tStep {i:6d} | loss={float(loss):+.6f} | "
+                f"\tStep {i:6d} | loss={loss_val:+.6f} | "
                 f"sum_r={sum_r:.6f} | penalty={pen:.6f} | "
                 f"δ centers={delta:.6f}"
             )
