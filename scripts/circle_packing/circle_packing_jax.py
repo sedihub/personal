@@ -15,7 +15,15 @@ python3 ./circle_packing_jax.py \
   --optimizer=adam \
   --lr=1e-4 \
   --newton_alpha=1.0 \
-  --newton_damping=1.0
+  --newton_damping=1.0 \
+  --newton_max_delta=1.0 \
+  --penalty_weight=100.0 \
+  --n_steps=10000 \
+  --log_every=500 \
+  --learn_centers=true \
+  --sgd_momentum=0.9 \
+  --adamw_weight_decay=1e-4 \
+  --candidates_multiplier=5
 
 Supported optimizers: adam | adamw | sgd | newton
 """
@@ -67,6 +75,52 @@ flags.DEFINE_float(
     "H_reg = H + damping * I.  Improves stability when H is near-singular. "
     "Recommended range: 0.1–10.0 when penalty_weight=100.",
 )
+flags.DEFINE_float(
+    "newton_max_delta",
+    1.0,
+    "Per-parameter clamp on the Newton step: delta = clip(H^{-1} g, "
+    "[-max_delta, max_delta]).  Prevents large jumps when the Hessian is "
+    "poorly conditioned early in training.",
+)
+flags.DEFINE_float(
+    "penalty_weight",
+    100.0,
+    "Weight applied to circle–circle and circle–boundary overlap penalties "
+    "in the loss: loss = -sum(radii) + penalty_weight * overlap.",
+)
+flags.DEFINE_integer(
+    "n_steps",
+    10000,
+    "Total number of optimisation steps.",
+)
+flags.DEFINE_integer(
+    "log_every",
+    500,
+    "Print a progress line every this many steps. 0 = silent.",
+)
+flags.DEFINE_bool(
+    "learn_centers",
+    True,
+    "If False, circle centers are frozen and only radii are optimised "
+    "(first-order optimizers only; Newton always learns centers).",
+)
+flags.DEFINE_float(
+    "sgd_momentum",
+    0.9,
+    "Momentum coefficient for the SGD optimizer.",
+)
+flags.DEFINE_float(
+    "adamw_weight_decay",
+    1e-4,
+    "Weight-decay (L2 regularisation) coefficient for the AdamW optimizer.",
+)
+flags.DEFINE_integer(
+    "candidates_multiplier",
+    5,
+    "Controls the number of candidate points sampled per circle during "
+    "Mitchell's best-candidate (Poisson disk) initialisation: "
+    "candidates = max(10, n * candidates_multiplier).",
+)
 FLAGS = flags.FLAGS
 
 
@@ -74,12 +128,12 @@ FLAGS = flags.FLAGS
 # Center generator and plotting helper
 # ---------------------------------------------------------------------------
 
-def generate_points(n, max_margin_param=2.25) -> dict:
+def generate_points(n, max_margin_param=2.25, candidates_multiplier=5) -> dict:
     """
     Generate n well-spaced points using Mitchell's best-candidate algorithm
     (Poisson disk sampling).
     """
-    candidates = max(10, n * 5)
+    candidates = max(10, n * candidates_multiplier)
     points = {}
 
     max_marg = max_margin_param * math.sqrt(
@@ -325,17 +379,20 @@ def loss_fn(params: dict, penalty_weight: float = 1.0):
 # Optimizer factory
 # ---------------------------------------------------------------------------
 
-def make_optax_optimizer(name: str, lr: float) -> optax.GradientTransformation:
+def make_optax_optimizer(
+    name: str,
+    lr: float,
+    sgd_momentum: float = 0.9,
+    adamw_weight_decay: float = 1e-4,
+) -> optax.GradientTransformation:
     """Return an optax GradientTransformation for adam / adamw / sgd."""
     name = name.lower()
     if name == "adam":
         return optax.adam(lr)
     elif name == "adamw":
-        # weight_decay=1e-4 is a sensible default; can be exposed as a flag.
-        return optax.adamw(lr, weight_decay=1e-4)
+        return optax.adamw(lr, weight_decay=adamw_weight_decay)
     elif name == "sgd":
-        # Momentum=0.9 follows common practice; pure SGD would use 0.0.
-        return optax.sgd(lr, momentum=0.9)
+        return optax.sgd(lr, momentum=sgd_momentum)
     else:
         raise ValueError(
             f"Unknown first-order optimizer '{name}'. "
@@ -366,6 +423,7 @@ def newton_step(
     penalty_weight: float,
     alpha: float,
     damping: float,
+    max_delta: float,
 ) -> tuple:
     """
     One damped Newton step using the exact Hessian.
@@ -401,9 +459,8 @@ def newton_step(
     H_reg = H + damping * jnp.eye(p)                   # Tikhonov damping
     delta = jnp.linalg.solve(H_reg, g)                 # (p,)
 
-    # Safeguard: cap each component so one step cannot move more than 1.0 in
-    # raw-parameter space (sigmoid/softplus map this to a bounded real change).
-    max_delta = 1.0
+    # Safeguard: cap each component so one step cannot move more than max_delta
+    # in raw-parameter space (sigmoid/softplus map this to a bounded real change).
     delta = jnp.clip(delta, -max_delta, max_delta)
 
     new_flat   = flat - alpha * delta
@@ -422,32 +479,38 @@ def optimize(
     init_centers: Optional[jnp.ndarray] = None,
     init_radii: Optional[jnp.ndarray] = None,
     default_init_radius: float = 0.01,
-    penalty_weight: float = 1.0,
+    penalty_weight: float = 100.0,
     learn_centers: bool = True,
     optimizer_name: str = "adam",
-    n_steps: int = 2000,
+    n_steps: int = 10000,
     lr: float = 1e-2,
     newton_alpha: float = 1.0,
     newton_damping: float = 1.0,
-    log_every: int = 200,
+    newton_max_delta: float = 1.0,
+    sgd_momentum: float = 0.9,
+    adamw_weight_decay: float = 1e-4,
+    log_every: int = 500,
 ) -> dict:
     """
     Run the chosen optimiser and return a result dictionary.
 
     Parameters
     ----------
-    n                : number of circles (inferred from init_centers if None)
-    init_centers     : initial center coordinates in [0, 1], shape (n, 2)
-    init_radii       : initial radii, shape (n,)
+    n                   : number of circles (inferred from init_centers if None)
+    init_centers        : initial center coordinates in [0, 1], shape (n, 2)
+    init_radii          : initial radii, shape (n,)
     default_init_radius : fallback radius when init_radii is None
-    penalty_weight   : weight for the overlap penalty terms
-    learn_centers    : if False, centers are frozen (first-order only)
-    optimizer_name   : "adam" | "adamw" | "sgd" | "newton"
-    n_steps          : number of optimisation steps
-    lr               : learning rate for adam / adamw / sgd
-    newton_alpha     : step-size multiplier for Newton
-    newton_damping   : Tikhonov damping for Newton Hessian (H + damping*I)
-    log_every        : print progress every this many steps (0 = silent)
+    penalty_weight      : weight for the overlap penalty terms
+    learn_centers       : if False, centers are frozen (first-order only)
+    optimizer_name      : "adam" | "adamw" | "sgd" | "newton"
+    n_steps             : number of optimisation steps
+    lr                  : learning rate for adam / adamw / sgd
+    newton_alpha        : step-size multiplier for Newton
+    newton_damping      : Tikhonov damping for Newton Hessian (H + damping*I)
+    newton_max_delta    : per-parameter Newton step clamp
+    sgd_momentum        : momentum coefficient for SGD
+    adamw_weight_decay  : weight-decay coefficient for AdamW
+    log_every           : print progress every this many steps (0 = silent)
 
     Returns
     -------
@@ -476,16 +539,17 @@ def optimize(
     initial_centers = raw_to_centers(raw_c)
     params = {"raw_centers": raw_c, "raw_radii": raw_r}
 
-    # # For debug only!
-    # jax.debug.print("[JAX DEBUG] Initial Parameters: {params}", params=params)
-
     use_newton = optimizer_name.lower() == "newton"
 
     # ------------------------------------------------------------------
     # First-order optimiser setup (not used for Newton)
     # ------------------------------------------------------------------
     if not use_newton:
-        optimizer = make_optax_optimizer(optimizer_name, lr)
+        optimizer = make_optax_optimizer(
+            optimizer_name, lr,
+            sgd_momentum=sgd_momentum,
+            adamw_weight_decay=adamw_weight_decay,
+        )
 
         if not learn_centers:
             optimizer = optax.masked(
@@ -531,7 +595,9 @@ def optimize(
 
         @jax.jit
         def newton_step_jit(params):
-            return newton_step(params, penalty_weight, newton_alpha, newton_damping)
+            return newton_step(
+                params, penalty_weight, newton_alpha, newton_damping, newton_max_delta
+            )
 
     # ------------------------------------------------------------------
     # Main loop
@@ -604,21 +670,29 @@ def optimize(
 
 def main(argv):
     """Main function."""
-    n                = int(FLAGS.n)
-    seed             = int(FLAGS.seed)
-    png_filename     = FLAGS.png_filename
-    initial_radius   = FLAGS.initial_radius
-    max_margin_param = FLAGS.max_margin_param
-    optimizer_name   = FLAGS.optimizer
-    lr               = FLAGS.lr
-    newton_alpha     = FLAGS.newton_alpha
-    newton_damping   = FLAGS.newton_damping
+    n                    = int(FLAGS.n)
+    seed                 = int(FLAGS.seed)
+    png_filename         = FLAGS.png_filename
+    initial_radius       = FLAGS.initial_radius
+    max_margin_param     = FLAGS.max_margin_param
+    optimizer_name       = FLAGS.optimizer
+    lr                   = FLAGS.lr
+    newton_alpha         = FLAGS.newton_alpha
+    newton_damping       = FLAGS.newton_damping
+    newton_max_delta     = FLAGS.newton_max_delta
+    penalty_weight       = FLAGS.penalty_weight
+    n_steps              = FLAGS.n_steps
+    log_every            = FLAGS.log_every
+    learn_centers        = FLAGS.learn_centers
+    sgd_momentum         = FLAGS.sgd_momentum
+    adamw_weight_decay   = FLAGS.adamw_weight_decay
+    candidates_multiplier = FLAGS.candidates_multiplier
 
     if seed is not None:
         random.seed(seed)
 
     centers = jnp.array(
-        list(generate_points(n, max_margin_param).values()),
+        list(generate_points(n, max_margin_param, candidates_multiplier).values()),
         dtype=jnp.float32,
     )
     print(f"{centers=}")
@@ -632,25 +706,38 @@ def main(argv):
 
     print("=" * 60)
     print(f"Circle packing optimisation – unit square, n={n}")
-    print(f"Optimizer : {optimizer_name.upper()}")
+    print(f"Optimizer     : {optimizer_name.upper()}")
+    print(f"penalty_weight: {penalty_weight}")
+    print(f"n_steps       : {n_steps}")
+    print(f"learn_centers : {learn_centers}")
     if optimizer_name.lower() == "newton":
-        print(f"\talpha   : {newton_alpha}")
-        print(f"\tdamping : {newton_damping}")
+        print(f"  alpha       : {newton_alpha}")
+        print(f"  damping     : {newton_damping}")
+        print(f"  max_delta   : {newton_max_delta}")
+    elif optimizer_name.lower() == "sgd":
+        print(f"  lr          : {lr}")
+        print(f"  momentum    : {sgd_momentum}")
+    elif optimizer_name.lower() == "adamw":
+        print(f"  lr          : {lr}")
+        print(f"  weight_decay: {adamw_weight_decay}")
     else:
-        print(f"\tlr      : {lr}")
+        print(f"  lr          : {lr}")
     print("=" * 60)
 
     result = optimize(
         init_centers=centers,
         default_init_radius=initial_radius,
-        penalty_weight=100.0,
-        learn_centers=True,
+        penalty_weight=penalty_weight,
+        learn_centers=learn_centers,
         optimizer_name=optimizer_name,
-        n_steps=20000,
+        n_steps=n_steps,
         lr=lr,
         newton_alpha=newton_alpha,
         newton_damping=newton_damping,
-        log_every=500,
+        newton_max_delta=newton_max_delta,
+        sgd_momentum=sgd_momentum,
+        adamw_weight_decay=adamw_weight_decay,
+        log_every=log_every,
     )
 
     import numpy as np
