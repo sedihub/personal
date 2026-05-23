@@ -13,9 +13,9 @@ python3 ./circle_packing_jax.py \
   --initial_radius=0.01 \
   --max_margin_param=2.0 \
   --optimizer=adam \
-  --lr=1e-3 \
+  --lr=1e-4 \
   --newton_alpha=1.0 \
-  --newton_damping=1e-4
+  --newton_damping=1.0
 
 Supported optimizers: adam | adamw | sgd | newton
 """
@@ -265,6 +265,12 @@ def circle_circle_penalty(centers: jnp.ndarray, radii: jnp.ndarray) -> jnp.ndarr
 
     ri, rj = radii[:, None], radii[None, :]
     overlap     = _circle_circle_overlap(ri, rj, d)
+    # nan_to_num is the last-resort guard: even with all the clamping above,
+    # jnp.where evaluates *both* branches and backpropagates through both.
+    # Any residual NaN/Inf in the masked-off branch (e.g. non-overlapping
+    # pairs) would still corrupt the gradient.  Replacing them with 0 before
+    # the where-mask is applied makes the dead branch genuinely inert.
+    overlap     = jnp.nan_to_num(overlap, nan=0.0, posinf=0.0, neginf=0.0)
     overlapping = d < (ri + rj)
     n_circles   = radii.shape[0]
     upper       = jnp.triu(jnp.ones((n_circles, n_circles), dtype=bool), k=1)
@@ -282,7 +288,11 @@ def circle_boundary_penalty(centers: jnp.ndarray, radii: jnp.ndarray) -> jnp.nda
     cx, cy = centers[:, 0], centers[:, 1]
 
     def wall_contrib(dist):
-        overlap = _circle_wall_overlap(radii, dist)          # always finite
+        overlap = _circle_wall_overlap(radii, dist)
+        # Same defence as in circle_circle_penalty: sanitise before where so
+        # the dead branch (circle does not reach the wall) cannot contribute
+        # a NaN or Inf to the gradient.
+        overlap = jnp.nan_to_num(overlap, nan=0.0, posinf=0.0, neginf=0.0)
         return jnp.where(dist < radii, overlap, 0.0)
 
     return (
