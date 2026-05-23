@@ -34,6 +34,7 @@ from absl import logging
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 import math
+import numpy as np
 import random
 import jax
 import jax.numpy as jnp
@@ -740,7 +741,6 @@ def main(argv):
         log_every=log_every,
     )
 
-    import numpy as np
     print("\nFinal radii  :", np.array(result["radii"]).round(6))
     print("Final Centers:", np.array(result["centers"]).round(6))
     print("\nSum of radii :", round(result["sum_radii"], 6))
