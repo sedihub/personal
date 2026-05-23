@@ -12,7 +12,7 @@ For the algorithmic version, run:
 python3 ./circle_packing_jax.py \
   --n=26 \
   --seed=42 \
-  --png_filename="__DELETE_ME__.png" \
+  --png_filename="result_jax_.png" \
   --initial_radius=0.01 \
   --max_margin_param=2.0 \
   --optimizer=adam \
@@ -26,7 +26,8 @@ python3 ./circle_packing_jax.py \
   --learn_centers=true \
   --sgd_momentum=0.9 \
   --adamw_weight_decay=1e-4 \
-  --candidates_multiplier=5
+  --candidates_multiplier=5 \
+  --hex_init=false
 ```
 
 
