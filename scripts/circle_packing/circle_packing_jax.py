@@ -23,7 +23,8 @@ python3 ./circle_packing_jax.py \
   --learn_centers=true \
   --sgd_momentum=0.9 \
   --adamw_weight_decay=1e-4 \
-  --candidates_multiplier=5
+  --candidates_multiplier=5 \
+  --hex_init=false
 
 Supported optimizers: adam | adamw | sgd | newton
 """
@@ -122,6 +123,14 @@ flags.DEFINE_integer(
     "Mitchell's best-candidate (Poisson disk) initialisation: "
     "candidates = max(10, n * candidates_multiplier).",
 )
+flags.DEFINE_bool(
+    "hex_init",
+    False,
+    "If True, initialise circle centers on a regular hexagonal grid fitted "
+    "inside the unit square, instead of the default Mitchell best-candidate "
+    "(Poisson disk) sampling.  Exactly n centers are selected by filling hex "
+    "rows from the bottom-left and discarding excess points.",
+)
 FLAGS = flags.FLAGS
 
 
@@ -162,6 +171,101 @@ def generate_points(n, max_margin_param=2.25, candidates_multiplier=5) -> dict:
         points[i] = best_pt
 
     return points
+
+
+def generate_hex_points(n) -> dict:
+    """
+    Generate n points on a regular hexagonal grid fitted inside the unit square.
+
+    Layout
+    ------
+    A hex grid uses two interleaved rectangular sub-grids, offset by half a
+    column spacing horizontally and half a row spacing vertically:
+
+        Row 0 (even):  x = margin + 0·dx,  margin + 1·dx,  margin + 2·dx, ...
+        Row 1 (odd):   x = margin + 0.5·dx, margin + 1.5·dx, ...
+        Row 2 (even):  same as row 0, ...
+
+    The vertical spacing between adjacent rows in a regular hex grid is
+    dy = dx * sqrt(3) / 2, which keeps all nearest-neighbour distances equal
+    to dx.
+
+    Grid sizing
+    -----------
+    We want to pack at least n points inside [0, 1]² with a uniform margin on
+    all four sides.  A good approximation for the spacing is derived from the
+    area of the unit square:
+
+        n ≈ cols * rows,  with rows ≈ cols * sqrt(3)/2
+        → cols ≈ sqrt(n * 2/sqrt(3))
+
+    We round cols up, recompute rows so that cols*rows >= n, then fit the grid
+    symmetrically with equal margins on opposite sides:
+
+        margin_x = (1 - (cols-1)*dx) / 2
+        margin_y = (1 - (rows-1)*dy) / 2
+
+    Points are enumerated left-to-right, bottom-to-top; the first n are kept.
+    This gives a centred hex lattice with consistent spacing regardless of n.
+
+    Parameters
+    ----------
+    n : int
+        Number of center points to return.
+
+    Returns
+    -------
+    dict mapping index -> (x, y) for indices 0 … n-1.
+    """
+    if n <= 0:
+        return {}
+    if n == 1:
+        return {0: (0.5, 0.5)}
+
+    # Estimate grid dimensions so that cols * rows >= n.
+    cols = math.ceil(math.sqrt(n * 2.0 / math.sqrt(3)))
+    rows = math.ceil(n / cols)
+    # Expand until the grid has at least n cells.
+    while cols * rows < n:
+        cols += 1
+
+    # Spacing between adjacent columns; rows are dy = dx*sqrt(3)/2 apart.
+    dx = 1.0 / max(cols - 1, 1)
+    dy = dx * math.sqrt(3) / 2.0
+
+    # If the rows would overflow the unit square, shrink dx until they fit.
+    grid_height = (rows - 1) * dy
+    if grid_height > 1.0:
+        dy = 1.0 / max(rows - 1, 1)
+        dx = dy * 2.0 / math.sqrt(3)
+
+    # Centre the grid inside [0, 1]².
+    grid_width = (cols - 1) * dx
+    margin_x = (1.0 - grid_width) / 2.0
+    margin_y = (1.0 - (rows - 1) * dy) / 2.0
+
+    # Enumerate all grid points, keeping the first n.
+    all_pts = []
+    for row in range(rows):
+        x_offset = 0.5 * dx if (row % 2 == 1) else 0.0
+        for col in range(cols):
+            x = margin_x + col * dx + x_offset
+            y = margin_y + row * dy
+            # Odd rows have one fewer column to stay inside the unit square.
+            if x <= 1.0 + 1e-9:
+                all_pts.append((x, y))
+
+    # Sort bottom-to-top, left-to-right for a deterministic ordering, then
+    # take the first n.  If the grid produced fewer than n valid points
+    # (can happen for very small n with the odd-row trim), raise clearly.
+    all_pts.sort(key=lambda p: (round(p[1] / dy), p[0]))
+    if len(all_pts) < n:
+        raise ValueError(
+            f"Hex grid produced only {len(all_pts)} points but n={n} requested. "
+            "This should not happen; please file a bug."
+        )
+
+    return {i: all_pts[i] for i in range(n)}
 
 
 def plot(n: int, points: list, max_radius: list, filename: str = "result.png"):
@@ -688,14 +792,20 @@ def main(argv):
     sgd_momentum         = FLAGS.sgd_momentum
     adamw_weight_decay   = FLAGS.adamw_weight_decay
     candidates_multiplier = FLAGS.candidates_multiplier
+    hex_init              = FLAGS.hex_init
 
     if seed is not None:
         random.seed(seed)
 
-    centers = jnp.array(
-        list(generate_points(n, max_margin_param, candidates_multiplier).values()),
-        dtype=jnp.float32,
-    )
+    if hex_init:
+        point_dict = generate_hex_points(n)
+        init_method = "hex grid"
+    else:
+        point_dict = generate_points(n, max_margin_param, candidates_multiplier)
+        init_method = "Mitchell best-candidate (Poisson disk)"
+
+    centers = jnp.array(list(point_dict.values()), dtype=jnp.float32)
+    print(f"Initialisation: {init_method}")
     print(f"{centers=}")
 
     plot(
@@ -707,6 +817,7 @@ def main(argv):
 
     print("=" * 60)
     print(f"Circle packing optimisation – unit square, n={n}")
+    print(f"Initialisation: {init_method}")
     print(f"Optimizer     : {optimizer_name.upper()}")
     print(f"penalty_weight: {penalty_weight}")
     print(f"n_steps       : {n_steps}")
