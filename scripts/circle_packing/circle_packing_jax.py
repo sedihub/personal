@@ -548,7 +548,7 @@ def optimize(
             or bool(jnp.any(jnp.isnan(centers_now)))
         ):
             bad = []
-            if math.isnan(loss_val):                         bad.append("loss")
+            if math.isnan(loss_val):                        bad.append("loss")
             if bool(jnp.any(jnp.isnan(radii_now))):         bad.append("radii")
             if bool(jnp.any(jnp.isnan(centers_now))):       bad.append("centers")
             print(f"[NaN] step {i}, bad tensors: {bad}")
