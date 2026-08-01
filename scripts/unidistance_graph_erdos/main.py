@@ -32,8 +32,9 @@ def pairwise_loss(coords):
     energy = jnp.exp(-(d - 1.0) ** 2)
 
     coef = -1.0 / (n ** 2 * jnp.exp(-1.0))
-    loss = 0.5 * coef * jnp.sum(energy * mask)  # Extra 0.5 because of the mask 
-    soft_constraint = -coef * jnp.sum(jnp.exp(-d2))
+    loss = 0.5 * coef * jnp.sum(energy * mask)       # Extra 0.5 because of the mask 
+    soft_constraint = -coef * jnp.sum(jnp.exp(-d2))  # Prevent overlap
+    soft_constraint += 0.1 * jnp.sum(d) / n**2       # Confine
     return loss + soft_constraint
 
 
@@ -179,5 +180,5 @@ if __name__ == "__main__":
 
     # print("\nFinal coordinates:")
     # print(np.asarray(coords_final))
-    plot(coords0, coords_final, f"result_II_{n}.png")
+    plot(coords0, coords_final, f"result_III_{n}.png")
     print("Done!\n\n")
