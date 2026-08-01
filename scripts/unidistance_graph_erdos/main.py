@@ -24,7 +24,7 @@ jax.config.update("jax_enable_x64", True)  # helps Newton's method numerically
 def pairwise_loss(coords):
     """coords: (n, 2) array. Returns scalar loss."""
     n = coords.shape[0]
-    diff = coords[:, None, :] - coords[None, :, :]          # (n, n, 2)
+    diff = coords[:, None, :] - coords[None, :, :]           # (n, n, 2)
     d2 = jnp.sum(diff ** 2, axis=-1)                         # (n, n)
     d = jnp.sqrt(d2 + 1e-12)                                 # avoid nan grad at d=0
 
@@ -33,7 +33,8 @@ def pairwise_loss(coords):
 
     coef = -1.0 / (n ** 2 * jnp.exp(-1.0))
     loss = 0.5 * coef * jnp.sum(energy * mask)  # Extra 0.5 because of the mask 
-    return loss
+    soft_constraint = -coef * jnp.sum(jnp.exp(-d2))
+    return loss + soft_constraint
 
 
 # --------------------------------------------------------------------------
@@ -149,11 +150,11 @@ def plot(coords_initial: npt.NDArray, coords_final: npt.NDArray, filename: str =
 if __name__ == "__main__":
 
 
-    n = 5000
+    n = 1000
     # np.random.seed(42)
     # coords0 = np.random.randn(n, 2)
     rng = np.random.default_rng(seed=42)
-    coords0 = rng.uniform(low=-3.0, high=3.0, size=(n, 2))
+    coords0 = rng.uniform(low=-1.5, high=1.5, size=(n, 2))
 
     # ---- choose optimizer: "sgd", "adam", "adamw", or "newton" ----
     method = "adamw"
@@ -167,8 +168,8 @@ if __name__ == "__main__":
         coords_final = run_optax(coords0, optimizer, n_steps=10000, log_every=1000)
 
     elif method == "adamw":
-        optimizer = optax.adamw(learning_rate=0.01, weight_decay=1e-5)
-        coords_final = run_optax(coords0, optimizer, n_steps=10000, log_every=1000)
+        optimizer = optax.adamw(learning_rate=0.05, weight_decay=1e-5)
+        coords_final = run_optax(coords0, optimizer, n_steps=20000, log_every=1000)
 
     elif method == "newton":
         coords_final = run_newton(coords0, n_steps=50, damping=1e-3)
@@ -178,5 +179,5 @@ if __name__ == "__main__":
 
     # print("\nFinal coordinates:")
     # print(np.asarray(coords_final))
-    plot(coords0, coords_final, f"result_{n}.png")
+    plot(coords0, coords_final, f"result_II_{n}.png")
     print("Done!\n\n")
