@@ -34,7 +34,7 @@ def pairwise_loss(coords):
     coef = -1.0 / (n ** 2 * jnp.exp(-1.0))
     loss = 0.5 * coef * jnp.sum(energy * mask)       # Extra 0.5 because of the mask 
     soft_constraint = -coef * jnp.sum(jnp.exp(-d2))  # Prevent overlap
-    soft_constraint += 0.1 * jnp.sum(d) / n**2       # Confine
+    soft_constraint += 0.51 * jnp.sum(d) / n**2       # Confine
     return loss + soft_constraint
 
 
@@ -95,51 +95,66 @@ def run_newton(coords0, n_steps=50, damping=1e-4, log_every=10):
     return flat.reshape(n, 2)
 
 
-def plot(coords_initial: npt.NDArray, coords_final: npt.NDArray, filename: str = "result.png"):
-    """Plots the initial and final points.
+def plot(
+    coords_initial: npt.NDArray, 
+    coords_final: npt.NDArray, 
+    filename: str = "result.png",
+    num_bins: int = 200
+):
+    """Plots the initial and final points (top) and their distance distributions (bottom).
     """
     assert coords_initial.shape == coords_final.shape
 
-    fig, ax = plt.subplots(figsize=(12, 12))
+    # Create a figure with 2 subplots (stacked vertically)
+    fig, (ax1, ax2) = plt.subplots(
+        nrows=2, ncols=1, figsize=(12, 18),
+        gridspec_kw={'height_ratios': [3, 1]}
+    )
+    
+    # ==========================================
+    # Top Subplot: Scatter Plot (Original logic)
+    # ==========================================
     box = patches.Rectangle(
         (-0.5, -0.5), 1, 1, linewidth=1, linestyle="--", 
         edgecolor="green", facecolor="None", zorder=0,
     )
-    ax.add_patch(box)
+    ax1.add_patch(box)
 
-    # cmap = plt.cm.tab20
-    # for i in range(n):
-    #     x, y = points[i]
-    #     r = max_radius[i]
-    #     color = cmap(i % 20)
-    #     circle = plt.Circle(
-    #         (x, y), r, facecolor=color, alpha=0.4, linewidth=1.2, edgecolor=color, zorder=2
-    #     )
-    #     ax.add_patch(circle)
-    #     ax.plot(x, y, "o", color=color, markersize=4, zorder=3)
-    #     ax.annotate(
-    #         str(i), (x, y),
-    #         textcoords="offset points", xytext=(4, 4),
-    #         fontsize=7, color=color, zorder=4,
-    #     )
-
-    ax.scatter(
+    ax1.scatter(
         coords_initial[:, 0], coords_initial[:, 1], 
         s=5.0, color="darkgrey", alpha=0.5, label="Initial",
     )
-    ax.scatter(
+    ax1.scatter(
         coords_final[:, 0], coords_final[:, 1], 
         s=5.0, color="navy", alpha=0.50, label="Final",
     )
-    ax.legend()
-    # ax.set_xlim(-0.05, 1.05)
-    # ax.set_ylim(-0.05, 1.05)
-    ax.set_aspect("equal")
-    ax.set_title(f"Initial and Final Vertices", fontsize=12)
-    ax.set_xlabel("x")
-    ax.set_ylabel("y")
+    ax1.legend()
+    # ax1.set_xlim(-0.05, 1.05)
+    # ax1.set_ylim(-0.05, 1.05)
+    ax1.set_aspect("equal")
+    ax1.set_title("Initial and Final Vertices", fontsize=12)
+    ax1.set_xlabel("x")
+    ax1.set_ylabel("y")
+    ax1.axis("off")
+
+    # ==========================================
+    # Bottom Subplot: Distance Histograms
+    # ==========================================
+    # Calculate Euclidean distances from the origin
+    dist_initial = np.linalg.norm(coords_initial, axis=1)
+    dist_final = np.linalg.norm(coords_final, axis=1)
+
+    # Plot both histograms matching the scatter plot colors
+    ax2.hist(dist_initial, bins=num_bins, color="darkgrey", alpha=0.5, label="Initial")
+    ax2.hist(dist_final, bins=num_bins, color="navy", alpha=0.50, label="Final")
+    
+    ax2.legend()
+    ax2.set_title("Distribution of Distances from Origin", fontsize=12)
+    ax2.set_xlabel("Distance")
+    ax2.set_ylabel("Frequency")
+
+    # Save and cleanup
     plt.tight_layout()
-    plt.axis("off")
     plt.savefig(filename, bbox_inches="tight", dpi=150)
     plt.close()
     print(f"\nPlot saved to '{filename}'")
@@ -151,26 +166,27 @@ def plot(coords_initial: npt.NDArray, coords_final: npt.NDArray, filename: str =
 if __name__ == "__main__":
 
 
-    n = 1000
+    n = 200
+    n_steps = 10000
     # np.random.seed(42)
     # coords0 = np.random.randn(n, 2)
     rng = np.random.default_rng(seed=42)
-    coords0 = rng.uniform(low=-1.5, high=1.5, size=(n, 2))
+    coords0 = rng.uniform(low=-2.5, high=2.5, size=(n, 2))
 
     # ---- choose optimizer: "sgd", "adam", "adamw", or "newton" ----
     method = "adamw"
 
     if method == "sgd":
         optimizer = optax.sgd(learning_rate=0.05, momentum=0.0)
-        coords_final = run_optax(coords0, optimizer, n_steps=2000, log_every=1000)
+        coords_final = run_optax(coords0, optimizer, n_steps=n_steps, log_every=1000)
 
     elif method == "adam":
         optimizer = optax.adam(learning_rate=0.05)
-        coords_final = run_optax(coords0, optimizer, n_steps=10000, log_every=1000)
+        coords_final = run_optax(coords0, optimizer, n_steps=n_steps, log_every=1000)
 
     elif method == "adamw":
         optimizer = optax.adamw(learning_rate=0.05, weight_decay=1e-5)
-        coords_final = run_optax(coords0, optimizer, n_steps=20000, log_every=1000)
+        coords_final = run_optax(coords0, optimizer, n_steps=n_steps, log_every=1000)
 
     elif method == "newton":
         coords_final = run_newton(coords0, n_steps=50, damping=1e-3)
