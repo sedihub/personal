@@ -35,8 +35,8 @@ def pairwise_loss(coords):
     coef = -1.0 / (n ** 2 * jnp.exp(-1.0))
     loss = 0.5 * coef * jnp.sum(energy * mask)       # Extra 0.5 because of the mask 
     soft_constraint = -coef * jnp.sum(jnp.exp(-d2))  # Prevent overlap
-    soft_constraint += 0.0 * jnp.sum(d) / n**2       # Confine
-    return loss + soft_constraint
+    soft_constraint += 0.6 * jnp.sum(d) / n**2       # Confine
+    return loss + 0.2 * soft_constraint
 
 
 # --------------------------------------------------------------------------
@@ -144,19 +144,23 @@ def plot(
     # Calculate Euclidean distances from the origin
     dist_initial = pdist(coords_initial, metric="euclidean")
     dist_final = pdist(coords_final, metric="euclidean")
+    print(f"\n\t{dist_initial.shape=}")
+    print(f"\t{dist_final.shape=}")
 
     # Plot both histograms matching the scatter plot colors
-    ax2.hist(dist_initial, bins=num_bins, color="darkgrey", alpha=0.5, label="Initial")
-    ax2.hist(dist_final, bins=num_bins, color="navy", alpha=0.50, label="Final")
+    dist_initial, bins, _ = ax2.hist(dist_initial, bins=num_bins, align="mid", color="darkgrey", alpha=0.5, label="Initial")
+    dist_final, _, _ = ax2.hist(dist_final, bins=bins, align="mid", color="navy", alpha=0.5, label="Final")
+    print(f"\n\t{dist_initial.shape=}, {np.sum(dist_initial)=}")
+    print(f"\t{dist_final.shape=}, {np.sum(dist_final)=}")
     
     ax2.legend()
     ax2.set_title("Distribution of Distances from Origin", fontsize=12)
     ax2.set_xlabel("Distance")
-    ax2.set_ylabel("Frequency")
+    ax2.set_ylabel("Count")
 
     # Save and cleanup
     plt.tight_layout()
-    plt.savefig(filename, bbox_inches="tight", dpi=150)
+    plt.savefig(filename, bbox_inches="tight", dpi=300)
     plt.close()
     print(f"\nPlot saved to '{filename}'")
 
@@ -167,8 +171,9 @@ def plot(
 if __name__ == "__main__":
 
 
-    n = 200
+    n = 4000
     n_steps = 10000
+    lr = 0.001
     # np.random.seed(42)
     # coords0 = np.random.randn(n, 2)
     rng = np.random.default_rng(seed=42)
@@ -178,15 +183,15 @@ if __name__ == "__main__":
     method = "adamw"
 
     if method == "sgd":
-        optimizer = optax.sgd(learning_rate=0.05, momentum=0.0)
+        optimizer = optax.sgd(learning_rate=lr, momentum=0.0)
         coords_final = run_optax(coords0, optimizer, n_steps=n_steps, log_every=1000)
 
     elif method == "adam":
-        optimizer = optax.adam(learning_rate=0.05)
+        optimizer = optax.adam(learning_rate=lr)
         coords_final = run_optax(coords0, optimizer, n_steps=n_steps, log_every=1000)
 
     elif method == "adamw":
-        optimizer = optax.adamw(learning_rate=0.05, weight_decay=1e-5)
+        optimizer = optax.adamw(learning_rate=lr, weight_decay=1e-5)
         coords_final = run_optax(coords0, optimizer, n_steps=n_steps, log_every=1000)
 
     elif method == "newton":
