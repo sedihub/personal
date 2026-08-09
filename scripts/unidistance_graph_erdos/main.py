@@ -14,6 +14,7 @@ import jax.numpy as jnp
 import optax
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
+from scipy.spatial.distance import pdist
 
 jax.config.update("jax_enable_x64", True)  # helps Newton's method numerically
 
@@ -34,7 +35,7 @@ def pairwise_loss(coords):
     coef = -1.0 / (n ** 2 * jnp.exp(-1.0))
     loss = 0.5 * coef * jnp.sum(energy * mask)       # Extra 0.5 because of the mask 
     soft_constraint = -coef * jnp.sum(jnp.exp(-d2))  # Prevent overlap
-    soft_constraint += 0.51 * jnp.sum(d) / n**2       # Confine
+    soft_constraint += 0.0 * jnp.sum(d) / n**2       # Confine
     return loss + soft_constraint
 
 
@@ -141,8 +142,8 @@ def plot(
     # Bottom Subplot: Distance Histograms
     # ==========================================
     # Calculate Euclidean distances from the origin
-    dist_initial = np.linalg.norm(coords_initial, axis=1)
-    dist_final = np.linalg.norm(coords_final, axis=1)
+    dist_initial = pdist(coords_initial, metric="euclidean")
+    dist_final = pdist(coords_final, metric="euclidean")
 
     # Plot both histograms matching the scatter plot colors
     ax2.hist(dist_initial, bins=num_bins, color="darkgrey", alpha=0.5, label="Initial")
@@ -171,7 +172,7 @@ if __name__ == "__main__":
     # np.random.seed(42)
     # coords0 = np.random.randn(n, 2)
     rng = np.random.default_rng(seed=42)
-    coords0 = rng.uniform(low=-2.5, high=2.5, size=(n, 2))
+    coords0 = rng.uniform(low=-1.5, high=1.5, size=(n, 2))
 
     # ---- choose optimizer: "sgd", "adam", "adamw", or "newton" ----
     method = "adamw"
